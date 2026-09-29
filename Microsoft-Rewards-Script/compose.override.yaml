@@ -17,6 +17,9 @@ services:
             API_ALLOW_SCHEDULE_WRITE: 'true'
             API_ALLOW_ACCOUNT_WRITE: 'true'
             API_ALLOW_MANUAL_LOGIN: 'true'
+            # Restarts the container when its DNS is stuck (it started before the
+            # machine's network was up); restart: unless-stopped brings it back.
+            API_DNS_WATCHDOG: 'true'
         ports:
             # Loopback only: nothing outside this machine can reach the API.
             - '127.0.0.1:3010:3010'

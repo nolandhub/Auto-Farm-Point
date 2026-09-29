@@ -18,6 +18,7 @@ import { readSchedule, writeSchedule } from './scheduleStore.js'
 import { addAccount, readAccountFields, removeAccount, updateAccount } from './accountStore.js'
 import { deleteStoredSessions, listStoredSessions } from './sessionStore.js'
 import { ManualLoginManager } from './manualLoginManager.js'
+import { DnsWatchdog } from './dnsWatchdog.js'
 import { resolveRunCommand } from './runCommand.js'
 import {
     log,
@@ -118,6 +119,8 @@ const ALLOW_CONFIG_WRITE = envBool('API_ALLOW_CONFIG_WRITE', false)
 const ALLOW_SCHEDULE_WRITE = envBool('API_ALLOW_SCHEDULE_WRITE', false)
 const ALLOW_ACCOUNT_WRITE = envBool('API_ALLOW_ACCOUNT_WRITE', false)
 const ALLOW_MANUAL_LOGIN = envBool('API_ALLOW_MANUAL_LOGIN', false)
+// Exits when the container's DNS is stuck; only for a container with a restart policy
+const DNS_WATCHDOG = envBool('API_DNS_WATCHDOG', false)
 
 const RUN_HISTORY = integerSetting('API_RUN_HISTORY', envStr('API_RUN_HISTORY'), 20)
 const DIAG_DIR = envStr('API_DIAGNOSTICS_DIR') ?? path.join(projectRoot, 'diagnostics')
@@ -921,10 +924,17 @@ server.listen(PORT, HOST, () => {
         auth: Boolean(TOKEN)
     }
     process.stdout.write(`__API_READY__ ${JSON.stringify(ready)}\n`)
+
+    if (DNS_WATCHDOG) {
+        new DnsWatchdog({
+            note: (level, message) => pm.note(level, message),
+            onStale: () => void shutdown('DNS watchdog', { code: 1 })
+        }).start()
+    }
 })
 
 let shuttingDown = false
-async function shutdown(signal, { force = false } = {}) {
+async function shutdown(signal, { force = false, code = 0 } = {}) {
     if (shuttingDown) return
     shuttingDown = true
     log('INFO', `${signal} received - shutting down.`)
@@ -937,7 +947,7 @@ async function shutdown(signal, { force = false } = {}) {
     } catch {
         // ignore
     }
-    process.exit(0)
+    process.exit(code)
 }
 process.on('SIGINT', () => void shutdown('SIGINT'))
 process.on('SIGTERM', () => void shutdown('SIGTERM'))
