@@ -19,7 +19,7 @@
     "doAppPromotions": true,
     "doDesktopSearch": true,
     "doMobileSearch": true,
-    "doBonusSearches": false,
+    "doBonusSearches": true,
     "doDailyCheckIn": true,
     "doReadToEarn": true,
     "doActivateSearchPerk": true,
