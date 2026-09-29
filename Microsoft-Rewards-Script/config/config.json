@@ -13,8 +13,8 @@
   },
   "workers": {
     "doDailySet": true,
-    "doClaimBonusPoints": true,
     "doMorePromotions": true,
+    "doClaimBonusPoints": true,
     "doPunchCards": true,
     "doAppPromotions": true,
     "doDesktopSearch": true,
@@ -68,6 +68,10 @@
     "edgeBrowsing": false
   },
   "debugLogs": false,
+  "proxy": {
+    "queryEngine": true,
+    "ignoreCertificateErrors": false
+  },
   "consoleLogFilter": {
     "enabled": false,
     "mode": "whitelist",
@@ -81,19 +85,10 @@
     ],
     "regexPatterns": []
   },
-  "proxy": {
-    "queryEngine": true,
-    "ignoreCertificateErrors": false
-  },
   "webhook": {
     "discord": {
       "enabled": false,
       "url": ""
-    },
-    "telegram": {
-      "enabled": false,
-      "botToken": "",
-      "chatId": ""
     },
     "ntfy": {
       "enabled": false,
@@ -106,6 +101,11 @@
         "notify"
       ],
       "priority": 3
+    },
+    "telegram": {
+      "enabled": false,
+      "botToken": "",
+      "chatId": ""
     },
     "webhookLogFilter": {
       "enabled": false,

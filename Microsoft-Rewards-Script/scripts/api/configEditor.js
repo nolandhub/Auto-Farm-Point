@@ -254,7 +254,11 @@ export function readConfig(projectRoot) {
 }
 
 export function writeConfigAtomic(projectRoot, cfg) {
-    const target = resolveConfigPath(projectRoot)
+    // In Docker, <root>/config.json is a symlink to the file on the ./config
+    // volume. Renaming over the link would replace the link itself, so the
+    // change would never reach the volume and would vanish on the next start.
+    const resolved = resolveConfigPath(projectRoot)
+    const target = fs.existsSync(resolved) ? fs.realpathSync(resolved) : resolved
     if (fs.existsSync(target)) {
         try {
             fs.copyFileSync(target, `${target}.bak`)
