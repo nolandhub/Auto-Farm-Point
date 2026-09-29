@@ -109,6 +109,9 @@ export function createClient({ url, token }, fetchImpl = (...args) => globalThis
     deleteSession: (email) => call("DELETE", `/sessions/${encodeURIComponent(email)}`),
     patchConfig: (partial) => call("PATCH", "/config", partial),
     patchSchedule: (fields) => call("PATCH", "/schedule", fields),
+    manualLoginStatus: () => call("GET", "/manual-login"),
+    startManualLogin: (email, platform) => call("POST", "/manual-login", platform ? { email, platform } : { email }),
+    cancelManualLogin: () => call("DELETE", "/manual-login"),
   };
 }
 
@@ -171,8 +174,9 @@ export function loginPrompt(logs, now = Date.now()) {
 // --------------------------------------------------------------------- badge
 
 /** The toolbar badge: what needs the user first, then whether it is working. */
-export function badgeFor({ reachable, state, prompt, failed }) {
+export function badgeFor({ reachable, state, prompt, failed, manual }) {
   if (prompt) return { text: prompt.number ?? "!", color: "#b45309" };
+  if (manual) return { text: "!", color: "#b45309" };
   if (!reachable) return { text: "", color: "#6b7280" };
   if (state && state !== "idle") return { text: "ON", color: "#15803d" };
   if (failed) return { text: "!", color: "#b91c1c" };
@@ -197,12 +201,18 @@ export async function refreshBadge(fetchImpl) {
   let badge;
   try {
     const api = await connect(fetchImpl);
-    const [status, { logs }] = await Promise.all([api.status(), api.logs({ limit: 60 })]);
+    const [status, { logs }, manualStatus] = await Promise.all([
+      api.status(),
+      api.logs({ limit: 60 }),
+      // An older API has no manual login; that must not blank the badge.
+      api.manualLoginStatus().catch(() => null),
+    ]);
     badge = badgeFor({
       reachable: true,
       state: status.state,
       prompt: status.state === "idle" ? null : loginPrompt(logs),
       failed: lastRunFailed(status),
+      manual: manualStatus?.state === "running",
     });
   } catch {
     badge = badgeFor({ reachable: false });

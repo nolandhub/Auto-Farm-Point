@@ -11,8 +11,14 @@ import { PasswordlessLogin } from './methods/PasswordlessLogin'
 import { TotpLogin } from './methods/Totp2FALogin'
 import { CodeLogin } from './methods/GetACodeLogin'
 import { RecoveryLogin } from './methods/RecoveryEmailLogin'
-import { canPromptForInput } from './methods/LoginUtils'
-import { shouldTreatLoginAlertAsFatal } from './LoginState'
+import { canPromptForInput, getSubtitleMessage } from './methods/LoginUtils'
+import {
+    manualLoginMarker,
+    mentionsProof,
+    shouldStopLoginCycle,
+    shouldTreatLoginAlertAsFatal,
+    type ManualLoginReason
+} from './LoginState'
 
 import type { Account } from '../../interface/Account'
 
@@ -57,6 +63,7 @@ export class Login {
     private passwordlessMethodSelected = false
     private postKmsiAccepted = false
     private loginAlertObservations = 0
+    private manualLoginRequested = false
 
     private readonly selectors = {
         primaryButton: 'button[data-testid="primaryButton"]',
@@ -101,6 +108,7 @@ export class Login {
             this.passwordlessMethodSelected = false
             this.postKmsiAccepted = false
             this.loginAlertObservations = 0
+            this.manualLoginRequested = false
             this.bot.logger.info(this.bot.isMobile, 'LOGIN', 'Starting login process')
 
             await page
@@ -116,6 +124,7 @@ export class Login {
             let iteration = 0
             let previousState: LoginState = 'UNKNOWN'
             let sameStateCount = 0
+            const stateVisits = new Map<LoginState, number>()
 
             while (iteration < maxIterations) {
                 if (page.isClosed()) throw new Error('Page closed unexpectedly')
@@ -159,8 +168,17 @@ export class Login {
                     break
                 }
 
+                // Going round the same pages fails now, before it costs more codes or minutes
+                const visits = (stateVisits.get(state) ?? 0) + 1
+                stateVisits.set(state, visits)
+                if (shouldStopLoginCycle(state, visits)) {
+                    this.requireManualLogin(account, 'stuck')
+                    throw new Error(`Login keeps returning to state ${state}; stopping at visit ${visits}`)
+                }
+
                 const shouldContinue = await this.handleState(state, page, account)
                 if (!shouldContinue) {
+                    this.requireManualLogin(account, 'stuck')
                     throw new Error(`Login failed or aborted at state: ${state}`)
                 }
 
@@ -168,6 +186,7 @@ export class Login {
             }
 
             if (iteration >= maxIterations) {
+                this.requireManualLogin(account, 'stuck')
                 throw new Error('Login timeout: exceeded maximum iterations')
             }
 
@@ -261,9 +280,7 @@ export class Login {
         ) {
             const normalizedFooterAction = this.normalizeSignInText(footerActionText)
             // Detect email or masked phone proof destinations without relying on localized footer text
-            const footerTargetsSpecificProof =
-                /[\w.+*-]+@[\w.*-]+\.[a-z]{2,}/i.test(normalizedFooterAction) ||
-                /(?:\+?\d|[*xX])(?:[\d\s().*xX-]{4,})(?:\d|[*xX])/.test(normalizedFooterAction)
+            const footerTargetsSpecificProof = mentionsProof(normalizedFooterAction)
 
             if (footerAction && !footerTargetsSpecificProof && !this.passwordlessMethodSelected) {
                 this.bot.logger.debug(this.bot.isMobile, 'DETECT-STATE', 'Alternative sign-in methods are available')
@@ -347,6 +364,13 @@ export class Login {
             .waitForSelector(selector, { state: 'visible', timeout: 5000 })
             .then(() => true)
             .catch(() => false)
+    }
+
+    // Once per login: the specific reason logged where the bot gave up wins over the generic "stuck"
+    private requireManualLogin(account: Account, reason: ManualLoginReason): void {
+        if (this.manualLoginRequested) return
+        this.manualLoginRequested = true
+        this.bot.logger.error(this.bot.isMobile, 'LOGIN', manualLoginMarker(account.email, reason))
     }
 
     private normalizeSignInText(value: string): string {
@@ -556,6 +580,20 @@ export class Login {
 
             // Get a sign-in request - keep the primary Authenticator action when footer is a proof fallback
             case 'PASSWORDLESS_SEND_CODE': {
+                // "We'll send a code to <email/phone>": the bot could never read it, so request none
+                if (!canPromptForInput()) {
+                    const subtitle = (await getSubtitleMessage(page)) ?? ''
+                    if (mentionsProof(subtitle)) {
+                        this.bot.logger.error(
+                            this.bot.isMobile,
+                            'LOGIN',
+                            'Microsoft only offers a code sent to email or phone for this account, and the bot cannot read it; no code was requested. The extension opens a manual sign-in page for it; to avoid this, turn password sign-in back on (account.microsoft.com > Security > Advanced security options) or add Microsoft Authenticator'
+                        )
+                        this.requireManualLogin(account, 'email-code-only')
+                        return false
+                    }
+                }
+
                 this.bot.logger.info(this.bot.isMobile, 'LOGIN', 'Continuing with primary sign-in method')
                 const clicked = await this.bot.browser.utils.ghostClick(page, this.selectors.primaryButton)
                 if (!clicked) {
@@ -639,6 +677,7 @@ export class Login {
                             'LOGIN',
                             'No supported non-interactive sign-in method is available; email-code fallback requires interactive stdin'
                         )
+                        this.requireManualLogin(account, 'email-code-only')
                         return false
                     }
 
@@ -668,6 +707,7 @@ export class Login {
                     'LOGIN',
                     `No supported sign-in method available${ignoredMethods.length ? `; ignored=${ignoredMethods.join(',')}` : ''}`
                 )
+                this.requireManualLogin(account, 'no-supported-method')
                 return false
             }
 
@@ -690,6 +730,7 @@ export class Login {
                             'LOGIN',
                             'Email verification requires a configured password or interactive stdin'
                         )
+                        this.requireManualLogin(account, 'email-verification')
                         return false
                     }
 
@@ -742,6 +783,7 @@ export class Login {
                 }
 
                 this.bot.logger.warn(this.bot.isMobile, 'LOGIN', 'No usable email verification alternative found')
+                this.requireManualLogin(account, 'email-verification')
                 return false
             }
 
@@ -875,6 +917,17 @@ export class Login {
                             'OTP footer action did not leave the code-entry page; falling back to Back'
                         )
                     }
+                }
+
+                // Back leads to a page that sends another code; without a way to read codes, stop at the first one
+                if (!canPromptForInput()) {
+                    this.bot.logger.error(
+                        this.bot.isMobile,
+                        'LOGIN',
+                        'Microsoft sent a sign-in code for this account and offers no other way the bot can use; stopping without requesting another. The extension opens a manual sign-in page for it; to avoid this, turn password sign-in back on (account.microsoft.com > Security > Advanced security options) or add Microsoft Authenticator'
+                    )
+                    this.requireManualLogin(account, 'email-code-only')
+                    return false
                 }
 
                 this.passwordlessMethodSelected = false

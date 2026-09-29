@@ -1,6 +1,7 @@
 import { ALARMS } from "./src/core/constants.js";
 import { cleanupLegacy } from "./src/core/legacy.js";
 import { clear as clearLogs, flush, getText, load as loadLogs, log } from "./src/core/log.js";
+import { checkManualLogin } from "./src/core/manual-login.js";
 import { refreshBadge } from "./src/core/netsky.js";
 import * as runner from "./src/core/runner.js";
 
@@ -71,7 +72,10 @@ chrome.runtime.onConnect.addListener((port) => {
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === ALARMS.netsky) void refreshBadge();
+  if (alarm.name === ALARMS.netsky) {
+    void refreshBadge();
+    void checkManualLogin();
+  }
   if (alarm.name === ALARMS.balance) void runner.refreshDashboard({ quests: false });
 });
 
@@ -107,4 +111,5 @@ void (async () => {
   await ensureAlarm(ALARMS.netsky, BADGE_PERIOD_MINUTES);
   await ensureAlarm(ALARMS.balance, BALANCE_PERIOD_MINUTES);
   await refreshBadge();
+  await checkManualLogin();
 })();

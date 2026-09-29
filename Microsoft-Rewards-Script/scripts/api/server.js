@@ -17,6 +17,7 @@ import {
 import { readSchedule, writeSchedule } from './scheduleStore.js'
 import { addAccount, readAccountFields, removeAccount, updateAccount } from './accountStore.js'
 import { deleteStoredSessions, listStoredSessions } from './sessionStore.js'
+import { ManualLoginManager } from './manualLoginManager.js'
 import { resolveRunCommand } from './runCommand.js'
 import {
     log,
@@ -116,6 +117,7 @@ const REVEAL_ENABLED = envBool('API_ALLOW_CONFIG_REVEAL', false)
 const ALLOW_CONFIG_WRITE = envBool('API_ALLOW_CONFIG_WRITE', false)
 const ALLOW_SCHEDULE_WRITE = envBool('API_ALLOW_SCHEDULE_WRITE', false)
 const ALLOW_ACCOUNT_WRITE = envBool('API_ALLOW_ACCOUNT_WRITE', false)
+const ALLOW_MANUAL_LOGIN = envBool('API_ALLOW_MANUAL_LOGIN', false)
 
 const RUN_HISTORY = integerSetting('API_RUN_HISTORY', envStr('API_RUN_HISTORY'), 20)
 const DIAG_DIR = envStr('API_DIAGNOSTICS_DIR') ?? path.join(projectRoot, 'diagnostics')
@@ -152,6 +154,9 @@ pm.on('log', entry => {
     if (entry.source === 'stderr') process.stderr.write(line)
     else process.stdout.write(line)
 })
+
+const manualLogin = new ManualLoginManager({ projectRoot, note: (level, message) => pm.note(level, message) })
+pm.on('log', entry => manualLogin.observeLog(entry))
 
 function toHistoryRecord(entry) {
     return {
@@ -356,6 +361,7 @@ const requestHandler = async (req, res) => {
                     'GET /config/diff',
                     'POST /config/sync',
                     'GET /schedule',
+                    'GET|POST|DELETE /manual-login',
                     'POST /start',
                     'POST /stop',
                     'POST /restart',
@@ -616,6 +622,37 @@ const requestHandler = async (req, res) => {
         // sse
         if (method === 'GET' && pathname === '/events') {
             return handleEventStream(req, res, url)
+        }
+
+        // manual login: the bot's browser on the noVNC page, for sign-ins it cannot finish alone
+        if (pathname === '/manual-login' && ['GET', 'POST', 'DELETE'].includes(method)) {
+            if (!ALLOW_MANUAL_LOGIN) {
+                return sendJson(res, 403, {
+                    error: 'Manual login is disabled. Set API_ALLOW_MANUAL_LOGIN=true to enable it.',
+                    code: 'MANUAL_LOGIN_DISABLED'
+                })
+            }
+            if (method === 'GET') return sendJson(res, 200, manualLogin.getStatus())
+            if (method === 'DELETE') {
+                try {
+                    return sendJson(res, 200, manualLogin.cancel())
+                } catch (err) {
+                    return sendJson(res, 409, { error: err.message, code: err.code })
+                }
+            }
+            const body = await readJsonObject(req)
+            const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
+            const account = loadAccounts().find(a => a.email.toLowerCase() === email)
+            if (!account) {
+                return sendJson(res, 404, { error: 'No configured account has that email.', code: 'UNKNOWN_ACCOUNT' })
+            }
+            try {
+                return sendJson(res, 202, await manualLogin.start(account.email, body.platform ?? 'both'))
+            } catch (err) {
+                if (err.code === 'ALREADY_RUNNING') return sendJson(res, 409, { error: err.message, code: err.code })
+                if (err.code === 'BAD_REQUEST') return sendJson(res, 400, { error: err.message, code: err.code })
+                return sendJson(res, 500, { error: err.message })
+            }
         }
 
         // start

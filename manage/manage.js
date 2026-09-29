@@ -1,5 +1,6 @@
 import { STORAGE_KEYS } from "../src/core/constants.js";
 import { resolveLang, t } from "../src/core/i18n.js";
+import { openManualLogin } from "../src/core/manual-login.js";
 import {
   createClient,
   cronFromTime,
@@ -245,9 +246,10 @@ function renderAccounts() {
     const run = button(t(lang, "runThis"), "secondary", () => runAccount(account));
     const edit = button(t(lang, "edit"), "secondary", () => openEdit(account));
     const reset = button(t(lang, "resetSession"), "secondary", () => resetSession(account));
+    const signIn = button(t(lang, "manualLogin"), "secondary", () => signInByHand(account));
     const remove = button(t(lang, "remove"), "danger-btn", () => removeAccount(account));
-    for (const node of [run, edit, reset, remove]) node.disabled = busy;
-    actions.append(run, edit, reset, remove);
+    for (const node of [run, edit, reset, signIn, remove]) node.disabled = busy;
+    actions.append(run, edit, reset, signIn, remove);
 
     item.append(main, actions);
     list.append(item);
@@ -446,6 +448,15 @@ const runAccount = (account) =>
 async function resetSession(account) {
   if (!confirm(t(lang, "confirmReset", { email: account.email }))) return;
   await act("accStatus", () => api.deleteSession(account.email), t(lang, "saved"));
+}
+
+async function signInByHand(account) {
+  const { url } = await getConnection();
+  await act(
+    "accStatus",
+    () => openManualLogin({ api, connectionUrl: url, email: account.email }),
+    t(lang, "manualLoginOpened")
+  );
 }
 
 async function removeAccount(account) {

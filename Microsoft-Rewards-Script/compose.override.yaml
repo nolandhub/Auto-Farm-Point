@@ -16,9 +16,12 @@ services:
             API_ALLOW_CONFIG_WRITE: 'true'
             API_ALLOW_SCHEDULE_WRITE: 'true'
             API_ALLOW_ACCOUNT_WRITE: 'true'
+            API_ALLOW_MANUAL_LOGIN: 'true'
         ports:
             # Loopback only: nothing outside this machine can reach the API.
             - '127.0.0.1:3010:3010'
+            # noVNC page of the manual-login browser; loopback only, like the API.
+            - '127.0.0.1:6080:6080'
         volumes:
             # Accounts live in their own file, mounted where the bot and the API
             # read the project .env. Keeping them out of the env_file .env means

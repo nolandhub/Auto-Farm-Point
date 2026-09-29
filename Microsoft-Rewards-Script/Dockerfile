@@ -76,6 +76,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-noto-color-emoji \
     fonts-freefont-ttf \
     fonts-droid-fallback \
+    xvfb \
+    x11vnc \
+    novnc \
+    websockify \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
 # Copy compiled application and dependencies from builder stage
@@ -83,10 +87,10 @@ COPY --from=builder /usr/src/microsoft-rewards-script/dist ./dist
 COPY --from=builder /usr/src/microsoft-rewards-script/package*.json ./
 COPY --from=builder /usr/src/microsoft-rewards-script/node_modules ./node_modules
 
-# Install patchright's stealth-patched Chromium headless shell.
-# The container is headless-only so the full browser isn't needed; then clean up
+# Install patchright's stealth-patched Chromium: the headless shell for runs,
+# and the full browser for manual login on the virtual display (noVNC)
 RUN set -eux; \
-    npx patchright install --with-deps --only-shell chromium; \
+    npx patchright install --with-deps chromium; \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
 # Copy config example into the image so entrypoint can use it as a fallback
@@ -104,6 +108,8 @@ COPY --chmod=755 scripts/docker/run_daily.sh ./scripts/docker/run_daily.sh
 COPY --chmod=755 scripts/docker/healthcheck.sh ./scripts/docker/healthcheck.sh
 COPY --chmod=755 scripts/api/ ./scripts/api/
 COPY --chmod=644 scripts/env.js ./scripts/env.js
+COPY --chmod=644 scripts/utils.js ./scripts/utils.js
+COPY --chmod=644 scripts/main/manualLogin.js ./scripts/main/manualLogin.js
 COPY --chmod=644 scripts/package.json ./scripts/package.json
 COPY --chmod=644 src/crontab.template /etc/cron.d/microsoft-rewards-cron.template
 COPY --chmod=755 scripts/docker/entrypoint.sh /usr/local/bin/entrypoint.sh

@@ -11,7 +11,7 @@ export const SCHEMA_VERSION = 3;
  * fresh from disk; the popup compares this with the worker's copy and asks for
  * a reload when they differ.
  */
-export const BUILD = "2026-09-29.3";
+export const BUILD = "2026-09-29.4";
 
 export const STORAGE_KEYS = {
   run: "run.v3",
@@ -23,6 +23,8 @@ export const STORAGE_KEYS = {
   netsky: "netsky.v1",
   // Today's baseline balance; see ledger.js.
   balance: "balance.v1",
+  // Which manual sign-ins were opened, the page's tab, and accounts to rerun.
+  manualLogin: "manualLogin.v1",
 };
 
 /**

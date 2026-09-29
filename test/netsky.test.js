@@ -178,6 +178,27 @@ test("a run the user stopped is not a failure; a crash or bad exit is", () => {
   assert.equal(netsky.lastRunFailed({ lastExit: { code: null, signal: null, error: "spawn ENOENT" } }), true);
 });
 
+test("manual-login calls use the right paths", async () => {
+  const { fetchImpl, calls } = fakeFetch({
+    "GET /manual-login": { body: { state: "idle", requests: [] } },
+    "POST /manual-login": { status: 202, body: { state: "running" } },
+    "DELETE /manual-login": { body: { state: "cancelled" } },
+  });
+  const api = netsky.createClient(connection, fetchImpl);
+  await api.manualLoginStatus();
+  await api.startManualLogin("me@example.com");
+  await api.cancelManualLogin();
+  assert.deepEqual(
+    calls.map((c) => `${c.method} ${c.path}`),
+    ["GET /manual-login", "POST /manual-login", "DELETE /manual-login"]
+  );
+  assert.deepEqual(JSON.parse(calls[1].body), { email: "me@example.com" });
+});
+
+test("the badge asks for attention while a manual sign-in is open", () => {
+  assert.deepEqual(netsky.badgeFor({ reachable: true, state: "idle", manual: true }), { text: "!", color: "#b45309" });
+});
+
 test("the toolbar badge follows TheNetsky", async () => {
   const now = new Date().toISOString();
   await netsky.saveConnection({ url: "http://127.0.0.1:3010", token: "t" });

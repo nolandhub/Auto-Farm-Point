@@ -154,6 +154,7 @@ Trang quản lý còn có: sửa mật khẩu/TOTP, **Đăng nhập lại** (xo�
 | Bấm Start mà xong ngay, +0 điểm | Bình thường: hôm nay đã kiếm hết điểm, bot không còn việc gì để làm |
 | Dòng *"Run finished (code 0)"* | Không phải lỗi: lượt chạy đã xong và thành công. Có mã khác 0 mới là lỗi. |
 | Popup hiện *"Tiện ích đã được cập nhật"* | Bấm **Tải lại**, hoặc vào `edge://extensions` bấm Reload |
+| Tài khoản chỉ đăng nhập bằng mã gửi qua email, hoặc bằng passkey | Để Edge mở. Bot không tự yêu cầu mã: nó dừng ngay, rồi chậm nhất 1 phút sau extension tự mở một tab hiện trình duyệt của bot. Trong tab đó, bấm **Send code** một lần và dán mã từ email. Xong thì tab tự đóng và bot tự chạy lại tài khoản. Muốn mở trang này bất cứ lúc nào, bấm **Đăng nhập thủ công** ở tài khoản trong trang quản lý. |
 
 ---
 
