@@ -1,0 +1,88 @@
+/* Colour, radius and motion tokens shared by the popup and the manager page. */
+
+/* ------------------------------------------------------------------ tokens */
+
+/* Light is the base; dark is applied by the media query unless the user has
+   forced light, and by [data-theme="dark"] when they have forced dark. */
+:root {
+  color-scheme: light;
+  --bg: #f4f6fa;
+  --surface: #ffffff;
+  --surface-2: #f1f4f9;
+  --text: #0f172a;
+  --muted: #475569;
+  --border: #e2e8f0;
+  --track: #e5eaf1;
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --primary-soft: #e8efff;
+  --on-primary: #ffffff;
+  --success: #15803d;
+  --success-soft: #e7f6ec;
+  --warning: #b45309;
+  --warning-soft: #fdf3e2;
+  --danger: #dc2626;
+  --danger-soft: #fdecec;
+  --coin: #d97706;
+  --ring: #2563eb;
+  --shadow: 0 1px 2px rgb(15 23 42 / 0.06), 0 4px 14px rgb(15 23 42 / 0.05);
+
+  --radius-lg: 14px;
+  --radius: 10px;
+  --radius-sm: 7px;
+
+  --dur-fast: 150ms;
+  --dur-med: 250ms;
+  --dur-slow: 450ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0b0f17;
+    --surface: #131a26;
+    --surface-2: #1a2232;
+    --text: #e7ecf3;
+    --muted: #9aa6b8;
+    --border: #263042;
+    --track: #263042;
+    --primary: #60a5fa;
+    --primary-hover: #93c5fd;
+    --primary-soft: #172a47;
+    --on-primary: #0b1220;
+    --success: #4ade80;
+    --success-soft: #12301f;
+    --warning: #fbbf24;
+    --warning-soft: #33280f;
+    --danger: #f87171;
+    --danger-soft: #3a1717;
+    --coin: #fbbf24;
+    --ring: #93c5fd;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0b0f17;
+  --surface: #131a26;
+  --surface-2: #1a2232;
+  --text: #e7ecf3;
+  --muted: #9aa6b8;
+  --border: #263042;
+  --track: #263042;
+  --primary: #60a5fa;
+  --primary-hover: #93c5fd;
+  --primary-soft: #172a47;
+  --on-primary: #0b1220;
+  --success: #4ade80;
+  --success-soft: #12301f;
+  --warning: #fbbf24;
+  --warning-soft: #33280f;
+  --danger: #f87171;
+  --danger-soft: #3a1717;
+  --coin: #fbbf24;
+  --ring: #93c5fd;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+}

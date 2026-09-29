@@ -1,0 +1,410 @@
+diff --git a/scripts/api/accounts.js b/scripts/api/accounts.js
+index 7b79320..25e09fa 100644
+--- a/scripts/api/accounts.js
++++ b/scripts/api/accounts.js
+@@ -27,6 +27,7 @@ export function loadAccounts(sourceEnv = process.env) {
+             langCode: normalizeLanguageCode(envStrFrom(sourceEnv, `ACCOUNT_${i}_LANG_CODE`) ?? 'en'),
+             hasRecoveryEmail: Boolean(envStrFrom(sourceEnv, `ACCOUNT_${i}_RECOVERY_EMAIL`)),
+             hasTotp: Boolean(envStrFrom(sourceEnv, `ACCOUNT_${i}_TOTP_SECRET`)),
++            hasPassword: Boolean(envStrFrom(sourceEnv, `ACCOUNT_${i}_PASSWORD`)),
+             proxy: proxyUrl
+                 ? {
+                       url: sanitizeProxyUrl(proxyUrl),
+diff --git a/scripts/api/server.js b/scripts/api/server.js
+index 32302fd..08cd4dd 100644
+--- a/scripts/api/server.js
++++ b/scripts/api/server.js
+@@ -15,6 +15,7 @@ import {
+     syncMissingDefaults
+ } from './configEditor.js'
+ import { readSchedule, writeSchedule } from './scheduleStore.js'
++import { addAccount, readAccountFields, removeAccount, updateAccount } from './accountStore.js'
+ import { deleteStoredSessions, listStoredSessions } from './sessionStore.js'
+ import { resolveRunCommand } from './runCommand.js'
+ import {
+@@ -32,7 +33,7 @@ import {
+ const __dirname = path.dirname(fileURLToPath(import.meta.url))
+ const projectRoot = getProjectRoot(__dirname)
+ 
+-loadEnvFile(projectRoot)
++const ENV_FILE = loadEnvFile(projectRoot) ?? path.join(projectRoot, '.env')
+ 
+ const cliArgs = parseArgs(process.argv.slice(2), { boolean: ['help', 'h'] })
+ 
+@@ -114,6 +115,7 @@ const ALLOW_ENV_OVERRIDES = envBool('API_ALLOW_ENV_OVERRIDES', false)
+ const REVEAL_ENABLED = envBool('API_ALLOW_CONFIG_REVEAL', false)
+ const ALLOW_CONFIG_WRITE = envBool('API_ALLOW_CONFIG_WRITE', false)
+ const ALLOW_SCHEDULE_WRITE = envBool('API_ALLOW_SCHEDULE_WRITE', false)
++const ALLOW_ACCOUNT_WRITE = envBool('API_ALLOW_ACCOUNT_WRITE', false)
+ 
+ const RUN_HISTORY = integerSetting('API_RUN_HISTORY', envStr('API_RUN_HISTORY'), 20)
+ const DIAG_DIR = envStr('API_DIAGNOSTICS_DIR') ?? path.join(projectRoot, 'diagnostics')
+@@ -425,6 +427,47 @@ const requestHandler = async (req, res) => {
+             return sendJson(res, 200, { accounts, count: accounts.length })
+         }
+ 
++        // account add/edit/remove, written to the .env file
++        if (
++            (method === 'POST' && pathname === '/accounts') ||
++            ((method === 'PATCH' || method === 'DELETE') && /^\/accounts\/\d+$/.test(pathname))
++        ) {
++            if (!ALLOW_ACCOUNT_WRITE) {
++                return sendJson(res, 403, {
++                    error: 'Account writes are disabled. Set API_ALLOW_ACCOUNT_WRITE=true to enable them.',
++                    code: 'ACCOUNT_WRITE_DISABLED'
++                })
++            }
++            if (pm.getStatus().state !== 'idle') {
++                return sendJson(res, 409, {
++                    error: 'Cannot change accounts while a bot run is active. Stop the run first.',
++                    code: 'RUN_ACTIVE'
++                })
++            }
++            try {
++                if (method === 'POST') {
++                    const fields = readAccountFields(await readJsonBody(req), { requireEmail: true })
++                    const index = addAccount(ENV_FILE, fields)
++                    pm.note('info', `Added ACCOUNT_${index} (${fields.email}) via API.`)
++                    const { emailKey, ...account } = loadAccounts().find(a => Number(a.index) === index) ?? {}
++                    return sendJson(res, 201, { added: true, index, account: emailKey ? account : null })
++                }
++                const index = Number(pathname.slice('/accounts/'.length))
++                if (method === 'PATCH') {
++                    const fields = readAccountFields(await readJsonBody(req), { requireEmail: false })
++                    updateAccount(ENV_FILE, index, fields)
++                    pm.note('info', `Updated ACCOUNT_${index} via API.`)
++                    return sendJson(res, 200, { updated: true, index })
++                }
++                const email = removeAccount(ENV_FILE, index)
++                pm.note('info', `Removed ACCOUNT_${index} (${email}) via API.`)
++                return sendJson(res, 200, { deleted: true, index, email })
++            } catch (err) {
++                if (err && err.status) return sendJson(res, err.status, { error: err.message, code: err.code })
++                throw err
++            }
++        }
++
+         // session list
+         if (method === 'GET' && pathname === '/sessions') {
+             const loaded = loadConfigSafe(projectRoot)
+diff --git a/scripts/api/accountStore.js b/scripts/api/accountStore.js
+new file mode 100644
+index 0000000..a4fa03c
+--- /dev/null
++++ b/scripts/api/accountStore.js
+@@ -0,0 +1,179 @@
++import fs from 'node:fs'
++
++// Adds, edits, and removes ACCOUNT_<N>_* entries in the .env file the bot and
++// this API read, so accounts can be managed over HTTP instead of by hand.
++// The file is rewritten in place rather than renamed over: in Docker it is a
++// bind-mounted single file, and a rename cannot replace a mount point.
++
++const FIELDS = {
++    email: 'EMAIL',
++    password: 'PASSWORD',
++    totpSecret: 'TOTP_SECRET',
++    recoveryEmail: 'RECOVERY_EMAIL',
++    geoLocale: 'GEO_LOCALE',
++    langCode: 'LANG_CODE'
++}
++
++const ACCOUNT_KEY = /^ACCOUNT_([1-9]\d*)_([A-Z_]+)$/
++
++function fail(message, code, status = 400) {
++    return Object.assign(new Error(message), { code, status })
++}
++
++function hasControlCharacters(value) {
++    return [...value].some(character => {
++        const code = character.charCodeAt(0)
++        return code < 32 || code === 127
++    })
++}
++
++function isEmail(value) {
++    return value.length <= 320 && /^[^\s@]+@[^\s@]+$/.test(value)
++}
++
++// Every rule leaves a value the .env reader gives back unchanged.
++const RULES = {
++    email: value => (isEmail(value) ? null : 'must be an email address'),
++    password: value => (value.length <= 1024 ? null : 'is too long'),
++    totpSecret: value => (/^[A-Z2-7 =]{16,}$/i.test(value) ? null : 'must be a base32 TOTP secret'),
++    recoveryEmail: value => (isEmail(value) ? null : 'must be an email address'),
++    geoLocale: value => (/^(auto|[A-Z]{2})$/i.test(value) ? null : 'must be "auto" or a two-letter country code'),
++    langCode: value => (/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(value) ? null : 'must be a language tag such as en')
++}
++
++/**
++ * Checks the fields of an account body. Unknown fields are refused; an empty
++ * string clears an optional field.
++ */
++export function readAccountFields(body, { requireEmail }) {
++    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
++        throw fail('Body must be a JSON object.', 'BAD_REQUEST')
++    }
++    const unknown = Object.keys(body).filter(key => !(key in FIELDS))
++    if (unknown.length) throw fail(`Unknown field${unknown.length === 1 ? '' : 's'}: ${unknown.join(', ')}`, 'BAD_REQUEST')
++
++    const fields = {}
++    for (const [name, raw] of Object.entries(body)) {
++        if (typeof raw !== 'string') throw fail(`\`${name}\` must be a string.`, 'BAD_REQUEST')
++        const value = name === 'password' ? raw : raw.trim()
++        if (hasControlCharacters(value)) throw fail(`\`${name}\` must not contain control characters.`, 'BAD_REQUEST')
++        if (value === '') {
++            if (name === 'email') throw fail('`email` must not be empty.', 'BAD_REQUEST')
++            fields[name] = ''
++            continue
++        }
++        const problem = RULES[name](value)
++        if (problem) throw fail(`\`${name}\` ${problem}.`, 'BAD_REQUEST')
++        fields[name] = value
++    }
++    if (requireEmail && !fields.email) throw fail('`email` is required.', 'BAD_REQUEST')
++    return fields
++}
++
++function readLines(file) {
++    try {
++        return fs.readFileSync(file, 'utf8').split(/\r?\n/)
++    } catch (err) {
++        if (err.code === 'ENOENT') return []
++        throw err
++    }
++}
++
++function writeLines(file, lines) {
++    while (lines.length && lines[lines.length - 1].trim() === '') lines.pop()
++    fs.writeFileSync(file, lines.join('\n') + '\n', { mode: 0o600 })
++}
++
++function keyOf(line) {
++    const trimmed = line.trim()
++    if (!trimmed || trimmed.startsWith('#')) return null
++    const eq = trimmed.indexOf('=')
++    return eq === -1 ? null : trimmed.slice(0, eq).trim()
++}
++
++// The reader strips exactly one pair of surrounding quotes and nothing else,
++// so wrapping in double quotes round-trips any single-line value.
++function entry(key, value) {
++    return `${key}="${value}"`
++}
++
++function accountIndexes(lines, env) {
++    const indexes = new Set()
++    for (const key of [...lines.map(keyOf), ...Object.keys(env)]) {
++        const match = key && ACCOUNT_KEY.exec(key)
++        if (match) indexes.add(Number(match[1]))
++    }
++    return indexes
++}
++
++function emailAt(index, env) {
++    const value = env[`ACCOUNT_${index}_EMAIL`]
++    return typeof value === 'string' && value.trim() ? value.trim() : null
++}
++
++function setField(lines, env, key, value) {
++    const at = lines.findIndex(line => keyOf(line) === key)
++    if (value === '') {
++        if (at !== -1) lines.splice(at, 1)
++        delete env[key]
++        return
++    }
++    if (at !== -1) {
++        lines[at] = entry(key, value)
++    } else {
++        // Next to the account's other lines, so each account stays one block.
++        const prefix = key.slice(0, key.indexOf('_', 'ACCOUNT_'.length) + 1)
++        const last = lines.findLastIndex(line => keyOf(line)?.startsWith(prefix))
++        lines.splice(last === -1 ? lines.length : last + 1, 0, entry(key, value))
++    }
++    env[key] = value
++}
++
++/** Adds an account in the next free slot. Returns its index. */
++export function addAccount(file, fields, env = process.env) {
++    const lines = readLines(file)
++    const indexes = accountIndexes(lines, env)
++    const taken = [...indexes].map(i => emailAt(i, env)?.toLowerCase())
++    if (taken.includes(fields.email.toLowerCase())) {
++        throw fail(`${fields.email} is already configured.`, 'ACCOUNT_EXISTS', 409)
++    }
++
++    const index = Math.max(0, ...indexes) + 1
++    if (lines.length && lines[lines.length - 1].trim() !== '') lines.push('')
++    lines.push(`# Account ${index}`)
++    for (const [name, suffix] of Object.entries(FIELDS)) {
++        if (fields[name]) setField(lines, env, `ACCOUNT_${index}_${suffix}`, fields[name])
++    }
++    writeLines(file, lines)
++    return index
++}
++
++/** Changes the given fields of an existing account; '' clears a field. */
++export function updateAccount(file, index, fields, env = process.env) {
++    if (!emailAt(index, env)) throw fail(`ACCOUNT_${index} is not configured.`, 'ACCOUNT_NOT_FOUND', 404)
++    const lines = readLines(file)
++    if (fields.email) {
++        const clash = [...accountIndexes(lines, env)].some(
++            i => i !== index && emailAt(i, env)?.toLowerCase() === fields.email.toLowerCase()
++        )
++        if (clash) throw fail(`${fields.email} is already configured.`, 'ACCOUNT_EXISTS', 409)
++    }
++    for (const [name, value] of Object.entries(fields)) {
++        setField(lines, env, `ACCOUNT_${index}_${FIELDS[name]}`, value)
++    }
++    writeLines(file, lines)
++}
++
++/** Removes every ACCOUNT_<index>_* entry. Returns the removed email. */
++export function removeAccount(file, index, env = process.env) {
++    const email = emailAt(index, env)
++    if (!email) throw fail(`ACCOUNT_${index} is not configured.`, 'ACCOUNT_NOT_FOUND', 404)
++    const prefix = `ACCOUNT_${index}_`
++    const lines = readLines(file).filter(line => {
++        const key = keyOf(line)
++        return !(key && key.startsWith(prefix)) && line.trim() !== `# Account ${index}`
++    })
++    for (const key of Object.keys(env)) if (key.startsWith(prefix)) delete env[key]
++    writeLines(file, lines)
++    return email
++}
+diff --git a/scripts/api/accountStore.test.js b/scripts/api/accountStore.test.js
+new file mode 100644
+index 0000000..c0b398f
+--- /dev/null
++++ b/scripts/api/accountStore.test.js
+@@ -0,0 +1,130 @@
++import assert from 'node:assert/strict'
++import fs from 'node:fs'
++import os from 'node:os'
++import path from 'node:path'
++import test from 'node:test'
++
++import { addAccount, readAccountFields, removeAccount, updateAccount } from './accountStore.js'
++import { loadEnvFile } from './lib.js'
++
++function tempEnv(content = '') {
++    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'account-store-'))
++    const file = path.join(dir, '.env')
++    if (content !== null) fs.writeFileSync(file, content)
++    return { dir, file }
++}
++
++// What the bot and the API will see after a restart: the file read back by
++// the project's own .env loader into an empty environment.
++function reread(dir) {
++    const saved = process.env
++    const cwd = process.cwd()
++    process.env = {}
++    process.chdir(dir) // the loader looks in the working directory first
++    try {
++        loadEnvFile(dir)
++        return process.env
++    } finally {
++        process.chdir(cwd)
++        process.env = saved
++    }
++}
++
++test('an added account lands in the next free slot and in the live env', () => {
++    const { file } = tempEnv('API_TOKEN="abc"\nACCOUNT_1_EMAIL="one@example.com"\n')
++    const env = { ACCOUNT_1_EMAIL: 'one@example.com' }
++
++    const index = addAccount(file, { email: 'two@example.com', password: 'pw' }, env)
++
++    assert.equal(index, 2)
++    assert.equal(env.ACCOUNT_2_EMAIL, 'two@example.com')
++    assert.equal(env.ACCOUNT_2_PASSWORD, 'pw')
++    assert.match(fs.readFileSync(file, 'utf8'), /API_TOKEN="abc"/)
++})
++
++test('any single-line password survives the round trip through the .env reader', () => {
++    const { dir, file } = tempEnv('')
++    const password = `p"a'ss w#rd$HOME\\"`
++
++    addAccount(file, { email: 'me@example.com', password }, {})
++
++    assert.equal(reread(dir).ACCOUNT_1_PASSWORD, password)
++})
++
++test('an email already configured is refused', () => {
++    const { file } = tempEnv('')
++    const env = {}
++    addAccount(file, { email: 'me@example.com' }, env)
++    assert.throws(() => addAccount(file, { email: 'ME@example.com' }, env), { code: 'ACCOUNT_EXISTS', status: 409 })
++})
++
++test('updating replaces a field in place, and an empty value clears it', () => {
++    const { dir, file } = tempEnv('')
++    const env = {}
++    addAccount(file, { email: 'me@example.com', password: 'old', totpSecret: 'JBSWY3DPEHPK3PXP' }, env)
++
++    updateAccount(file, 1, { password: 'new', totpSecret: '' }, env)
++
++    const after = reread(dir)
++    assert.equal(after.ACCOUNT_1_PASSWORD, 'new')
++    assert.equal(after.ACCOUNT_1_TOTP_SECRET, undefined)
++    assert.equal(env.ACCOUNT_1_TOTP_SECRET, undefined)
++    assert.equal(fs.readFileSync(file, 'utf8').match(/ACCOUNT_1_PASSWORD/g).length, 1)
++})
++
++test('a field added later joins its own account block', () => {
++    const { file } = tempEnv('')
++    const env = {}
++    addAccount(file, { email: 'one@example.com' }, env)
++    addAccount(file, { email: 'two@example.com' }, env)
++
++    updateAccount(file, 1, { password: 'late' }, env)
++
++    const keys = fs
++        .readFileSync(file, 'utf8')
++        .split('\n')
++        .filter(line => line.startsWith('ACCOUNT_'))
++        .map(line => line.slice(0, line.indexOf('=')))
++    assert.deepEqual(keys, ['ACCOUNT_1_EMAIL', 'ACCOUNT_1_PASSWORD', 'ACCOUNT_2_EMAIL'])
++})
++
++test('removing an account drops all of its lines and nothing else', () => {
++    const { dir, file } = tempEnv('API_TOKEN="abc"\n')
++    const env = {}
++    addAccount(file, { email: 'one@example.com', password: 'a' }, env)
++    addAccount(file, { email: 'two@example.com', password: 'b' }, env)
++
++    assert.equal(removeAccount(file, 1, env), 'one@example.com')
++
++    const after = reread(dir)
++    assert.equal(after.ACCOUNT_1_EMAIL, undefined)
++    assert.equal(after.ACCOUNT_1_PASSWORD, undefined)
++    assert.equal(after.ACCOUNT_2_EMAIL, 'two@example.com')
++    assert.equal(after.API_TOKEN, 'abc')
++    assert.equal(env.ACCOUNT_1_EMAIL, undefined)
++})
++
++test('the file is created when missing', () => {
++    const { dir, file } = tempEnv(null)
++    addAccount(file, { email: 'me@example.com' }, {})
++    assert.equal(reread(dir).ACCOUNT_1_EMAIL, 'me@example.com')
++})
++
++test('unknown slots are reported as not found', () => {
++    const { file } = tempEnv('')
++    assert.throws(() => removeAccount(file, 3, {}), { code: 'ACCOUNT_NOT_FOUND', status: 404 })
++    assert.throws(() => updateAccount(file, 3, { password: 'x' }, {}), { code: 'ACCOUNT_NOT_FOUND' })
++})
++
++test('bodies are checked field by field', () => {
++    assert.deepEqual(readAccountFields({ email: ' me@example.com ', password: ' spaced ' }, { requireEmail: true }), {
++        email: 'me@example.com',
++        password: ' spaced '
++    })
++    assert.throws(() => readAccountFields({}, { requireEmail: true }), /email` is required/)
++    assert.throws(() => readAccountFields({ email: 'nope' }, { requireEmail: true }), /email address/)
++    assert.throws(() => readAccountFields({ email: 'a@b.c', password: 'x\ny' }, { requireEmail: true }), /control/)
++    assert.throws(() => readAccountFields({ email: 'a@b.c', admin: 'yes' }, { requireEmail: true }), /Unknown field/)
++    assert.throws(() => readAccountFields({ email: 'a@b.c', geoLocale: 'Vietnam' }, { requireEmail: true }), /country/)
++    assert.deepEqual(readAccountFields({ totpSecret: '' }, { requireEmail: false }), { totpSecret: '' })
++})

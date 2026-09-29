@@ -1,0 +1,26 @@
+# Local additions so the Bing Auto Search extension can drive the bot.
+# Docker Compose merges this file over compose.yaml on its own; compose.yaml
+# stays as upstream ships it.
+services:
+    microsoft-rewards-script:
+        # Built from this checkout: the image carries the account endpoints in
+        # scripts/api/accountStore.js, which the published image does not have.
+        build: .
+        image: microsoft-rewards-script-local
+        environment:
+            TZ: 'Asia/Ho_Chi_Minh'
+            RUN_ON_START: 'false'
+            API_MODE: 'true'
+            # API_TOKEN comes from .env through env_file.
+            API_CORS_ORIGIN: 'chrome-extension://lplibmgbemeddeekibfmafplldpkiopg'
+            API_ALLOW_CONFIG_WRITE: 'true'
+            API_ALLOW_SCHEDULE_WRITE: 'true'
+            API_ALLOW_ACCOUNT_WRITE: 'true'
+        ports:
+            # Loopback only: nothing outside this machine can reach the API.
+            - '127.0.0.1:3010:3010'
+        volumes:
+            # Accounts live in their own file, mounted where the bot and the API
+            # read the project .env. Keeping them out of the env_file .env means
+            # passwords never pass through Compose's quoting and $-interpolation.
+            - ./accounts.env:/usr/src/microsoft-rewards-script/.env

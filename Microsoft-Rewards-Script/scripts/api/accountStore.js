@@ -1,0 +1,179 @@
+import fs from 'node:fs'
+
+// Adds, edits, and removes ACCOUNT_<N>_* entries in the .env file the bot and
+// this API read, so accounts can be managed over HTTP instead of by hand.
+// The file is rewritten in place rather than renamed over: in Docker it is a
+// bind-mounted single file, and a rename cannot replace a mount point.
+
+const FIELDS = {
+    email: 'EMAIL',
+    password: 'PASSWORD',
+    totpSecret: 'TOTP_SECRET',
+    recoveryEmail: 'RECOVERY_EMAIL',
+    geoLocale: 'GEO_LOCALE',
+    langCode: 'LANG_CODE'
+}
+
+const ACCOUNT_KEY = /^ACCOUNT_([1-9]\d*)_([A-Z_]+)$/
+
+function fail(message, code, status = 400) {
+    return Object.assign(new Error(message), { code, status })
+}
+
+function hasControlCharacters(value) {
+    return [...value].some(character => {
+        const code = character.charCodeAt(0)
+        return code < 32 || code === 127
+    })
+}
+
+function isEmail(value) {
+    return value.length <= 320 && /^[^\s@]+@[^\s@]+$/.test(value)
+}
+
+// Every rule leaves a value the .env reader gives back unchanged.
+const RULES = {
+    email: value => (isEmail(value) ? null : 'must be an email address'),
+    password: value => (value.length <= 1024 ? null : 'is too long'),
+    totpSecret: value => (/^[A-Z2-7 =]{16,}$/i.test(value) ? null : 'must be a base32 TOTP secret'),
+    recoveryEmail: value => (isEmail(value) ? null : 'must be an email address'),
+    geoLocale: value => (/^(auto|[A-Z]{2})$/i.test(value) ? null : 'must be "auto" or a two-letter country code'),
+    langCode: value => (/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(value) ? null : 'must be a language tag such as en')
+}
+
+/**
+ * Checks the fields of an account body. Unknown fields are refused; an empty
+ * string clears an optional field.
+ */
+export function readAccountFields(body, { requireEmail }) {
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+        throw fail('Body must be a JSON object.', 'BAD_REQUEST')
+    }
+    const unknown = Object.keys(body).filter(key => !(key in FIELDS))
+    if (unknown.length) throw fail(`Unknown field${unknown.length === 1 ? '' : 's'}: ${unknown.join(', ')}`, 'BAD_REQUEST')
+
+    const fields = {}
+    for (const [name, raw] of Object.entries(body)) {
+        if (typeof raw !== 'string') throw fail(`\`${name}\` must be a string.`, 'BAD_REQUEST')
+        const value = name === 'password' ? raw : raw.trim()
+        if (hasControlCharacters(value)) throw fail(`\`${name}\` must not contain control characters.`, 'BAD_REQUEST')
+        if (value === '') {
+            if (name === 'email') throw fail('`email` must not be empty.', 'BAD_REQUEST')
+            fields[name] = ''
+            continue
+        }
+        const problem = RULES[name](value)
+        if (problem) throw fail(`\`${name}\` ${problem}.`, 'BAD_REQUEST')
+        fields[name] = value
+    }
+    if (requireEmail && !fields.email) throw fail('`email` is required.', 'BAD_REQUEST')
+    return fields
+}
+
+function readLines(file) {
+    try {
+        return fs.readFileSync(file, 'utf8').split(/\r?\n/)
+    } catch (err) {
+        if (err.code === 'ENOENT') return []
+        throw err
+    }
+}
+
+function writeLines(file, lines) {
+    while (lines.length && lines[lines.length - 1].trim() === '') lines.pop()
+    fs.writeFileSync(file, lines.join('\n') + '\n', { mode: 0o600 })
+}
+
+function keyOf(line) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) return null
+    const eq = trimmed.indexOf('=')
+    return eq === -1 ? null : trimmed.slice(0, eq).trim()
+}
+
+// The reader strips exactly one pair of surrounding quotes and nothing else,
+// so wrapping in double quotes round-trips any single-line value.
+function entry(key, value) {
+    return `${key}="${value}"`
+}
+
+function accountIndexes(lines, env) {
+    const indexes = new Set()
+    for (const key of [...lines.map(keyOf), ...Object.keys(env)]) {
+        const match = key && ACCOUNT_KEY.exec(key)
+        if (match) indexes.add(Number(match[1]))
+    }
+    return indexes
+}
+
+function emailAt(index, env) {
+    const value = env[`ACCOUNT_${index}_EMAIL`]
+    return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function setField(lines, env, key, value) {
+    const at = lines.findIndex(line => keyOf(line) === key)
+    if (value === '') {
+        if (at !== -1) lines.splice(at, 1)
+        delete env[key]
+        return
+    }
+    if (at !== -1) {
+        lines[at] = entry(key, value)
+    } else {
+        // Next to the account's other lines, so each account stays one block.
+        const prefix = key.slice(0, key.indexOf('_', 'ACCOUNT_'.length) + 1)
+        const last = lines.findLastIndex(line => keyOf(line)?.startsWith(prefix))
+        lines.splice(last === -1 ? lines.length : last + 1, 0, entry(key, value))
+    }
+    env[key] = value
+}
+
+/** Adds an account in the next free slot. Returns its index. */
+export function addAccount(file, fields, env = process.env) {
+    const lines = readLines(file)
+    const indexes = accountIndexes(lines, env)
+    const taken = [...indexes].map(i => emailAt(i, env)?.toLowerCase())
+    if (taken.includes(fields.email.toLowerCase())) {
+        throw fail(`${fields.email} is already configured.`, 'ACCOUNT_EXISTS', 409)
+    }
+
+    const index = Math.max(0, ...indexes) + 1
+    if (lines.length && lines[lines.length - 1].trim() !== '') lines.push('')
+    lines.push(`# Account ${index}`)
+    for (const [name, suffix] of Object.entries(FIELDS)) {
+        if (fields[name]) setField(lines, env, `ACCOUNT_${index}_${suffix}`, fields[name])
+    }
+    writeLines(file, lines)
+    return index
+}
+
+/** Changes the given fields of an existing account; '' clears a field. */
+export function updateAccount(file, index, fields, env = process.env) {
+    if (!emailAt(index, env)) throw fail(`ACCOUNT_${index} is not configured.`, 'ACCOUNT_NOT_FOUND', 404)
+    const lines = readLines(file)
+    if (fields.email) {
+        const clash = [...accountIndexes(lines, env)].some(
+            i => i !== index && emailAt(i, env)?.toLowerCase() === fields.email.toLowerCase()
+        )
+        if (clash) throw fail(`${fields.email} is already configured.`, 'ACCOUNT_EXISTS', 409)
+    }
+    for (const [name, value] of Object.entries(fields)) {
+        setField(lines, env, `ACCOUNT_${index}_${FIELDS[name]}`, value)
+    }
+    writeLines(file, lines)
+}
+
+/** Removes every ACCOUNT_<index>_* entry. Returns the removed email. */
+export function removeAccount(file, index, env = process.env) {
+    const email = emailAt(index, env)
+    if (!email) throw fail(`ACCOUNT_${index} is not configured.`, 'ACCOUNT_NOT_FOUND', 404)
+    const prefix = `ACCOUNT_${index}_`
+    const lines = readLines(file).filter(line => {
+        const key = keyOf(line)
+        return !(key && key.startsWith(prefix)) && line.trim() !== `# Account ${index}`
+    })
+    for (const key of Object.keys(env)) if (key.startsWith(prefix)) delete env[key]
+    writeLines(file, lines)
+    return email
+}

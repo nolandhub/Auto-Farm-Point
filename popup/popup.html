@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Bing Auto Search</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <!-- One icon family (24px grid, 2px round strokes), referenced with <use>. -->
+    <svg class="sprite" aria-hidden="true" focusable="false">
+      <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" /></symbol>
+      <symbol id="i-phone" viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2" /><path d="M12 18h.01" /></symbol>
+      <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" /></symbol>
+      <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></symbol>
+      <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16" /><path d="M3 21v-5h5" /><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8" /><path d="M21 3v5h-5" /></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4v16l13-8z" fill="currentColor" /></symbol>
+      <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" /></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4" /></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z" /></symbol>
+      <symbol id="i-auto" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none" /></symbol>
+      <symbol id="i-coins" viewBox="0 0 24 24"><circle cx="9" cy="9" r="6" /><path d="M18.1 10.4A6 6 0 1 1 10.3 18" /><path d="M8 7h1v4" /></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" /></symbol>
+      <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></symbol>
+      <symbol id="i-external" viewBox="0 0 24 24"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></symbol>
+      <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></symbol>
+      <symbol id="i-app" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></symbol>
+      <symbol id="i-list" viewBox="0 0 24 24"><path d="m3 7 2 2 4-4" /><path d="m3 17 2 2 4-4" /><path d="M13 6h8M13 12h8M13 18h8" /></symbol>
+      <symbol id="i-bot" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="3" /><path d="M12 8V4M9 14h.01M15 14h.01" /><circle cx="12" cy="3" r="1" /></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="m9 12 2 2 4-4" /></symbol>
+      <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></symbol>
+    </svg>
+
+    <header class="head">
+      <div class="brand">
+        <img class="logo" src="../icon.png" alt="" width="22" height="22" />
+        <h1 data-i18n="appName">Bing Auto Search</h1>
+      </div>
+      <div class="head-actions">
+        <span class="pill" id="statePill" data-state="idle">
+          <span class="pill-dot" aria-hidden="true"></span>
+          <span id="stateText">Idle</span>
+        </span>
+        <button class="icon-btn" id="themeBtn" type="button">
+          <svg class="ic" aria-hidden="true"><use id="themeUse" href="#i-auto" /></svg>
+        </button>
+        <button class="icon-btn icon-btn--text" id="langBtn" type="button">EN</button>
+      </div>
+    </header>
+
+    <main>
+      <div class="update-banner" id="updateBanner" role="alert" hidden>
+        <svg class="ic" aria-hidden="true"><use href="#i-refresh" /></svg>
+        <span class="update-text" data-i18n="updateNotice">The extension was updated.</span>
+        <button type="button" id="reloadBtn" data-i18n="reloadNow">Reload</button>
+      </div>
+
+      <section class="card hero" aria-labelledby="todayLabel">
+        <div class="hero-main">
+          <div class="hero-copy">
+            <span class="eyebrow" id="todayLabel" data-i18n="today">Today</span>
+            <div class="hero-value">
+              <span class="big" id="todayPoints">0</span>
+              <span class="unit" id="todayUnit" data-i18n="pointsUnit">pts</span>
+            </div>
+            <div class="hero-sub" id="balance">
+              <svg class="ic ic-coin" aria-hidden="true"><use href="#i-coins" /></svg>
+              <span id="balanceText"></span>
+            </div>
+          </div>
+          <div class="ring" id="ring" role="img">
+            <svg viewBox="0 0 64 64" aria-hidden="true">
+              <circle class="ring-track" cx="32" cy="32" r="27" />
+              <circle class="ring-fill" id="ringFill" cx="32" cy="32" r="27" />
+            </svg>
+            <div class="ring-label" aria-hidden="true">
+              <span class="ring-pct" id="ringPct">0%</span>
+              <span class="ring-cap" data-i18n="ringCaption">search</span>
+            </div>
+          </div>
+        </div>
+        <div class="live" id="live" data-state="none">
+          <span class="live-dot" aria-hidden="true"></span>
+          <span class="live-text" id="liveText"></span>
+          <button class="icon-btn icon-btn--sm" id="refreshBtn" type="button">
+            <svg class="ic" aria-hidden="true"><use href="#i-refresh" /></svg>
+          </button>
+        </div>
+      </section>
+
+      <section class="tiles">
+        <article class="tile" id="tile-pc">
+          <div class="tile-head">
+            <svg class="ic" aria-hidden="true"><use href="#i-monitor" /></svg>
+            <span data-i18n="pc">PC</span>
+            <svg class="ic ic-done" aria-hidden="true"><use href="#i-check" /></svg>
+          </div>
+          <div class="tile-value"><span id="count-pc">0</span><span class="of" id="max-pc">/0</span></div>
+          <div class="bar"><div class="bar-fill" id="fill-pc"></div></div>
+          <div class="tile-note" id="left-pc">&nbsp;</div>
+        </article>
+        <article class="tile" id="tile-mobile">
+          <div class="tile-head">
+            <svg class="ic" aria-hidden="true"><use href="#i-phone" /></svg>
+            <span data-i18n="mobile">Mobile</span>
+            <svg class="ic ic-done" aria-hidden="true"><use href="#i-check" /></svg>
+          </div>
+          <div class="tile-value"><span id="count-mobile">0</span><span class="of" id="max-mobile">/0</span></div>
+          <div class="bar"><div class="bar-fill" id="fill-mobile"></div></div>
+          <div class="tile-note" id="left-mobile">&nbsp;</div>
+        </article>
+      </section>
+
+      <section class="card tasks" id="tasks" aria-labelledby="tasksTitle">
+        <div class="section-head">
+          <h2 id="tasksTitle">
+            <svg class="ic" aria-hidden="true"><use href="#i-list" /></svg>
+            <span data-i18n="tasksTitle">Tasks</span>
+          </h2>
+          <span class="tasks-count" id="tasksCount"></span>
+        </div>
+        <div class="tasks-bar" id="tasksBar" role="progressbar" aria-valuemin="0">
+          <div class="tasks-bar-fill" id="tasksBarFill"></div>
+        </div>
+        <p class="tasks-caption" id="tasksCaption"></p>
+        <ul class="task-list" id="taskList"></ul>
+        <button class="link-btn" id="tasksToggle" type="button" aria-expanded="false" aria-controls="taskList" hidden>
+          <span id="tasksToggleText"></span>
+          <svg class="ic" aria-hidden="true"><use href="#i-chevron" /></svg>
+        </button>
+      </section>
+
+      <section class="card bot" id="bot" aria-labelledby="botTitle" data-state="offline">
+        <div class="section-head">
+          <h2 id="botTitle">
+            <svg class="ic" aria-hidden="true"><use href="#i-bot" /></svg>
+            <span data-i18n="botTitle">Farming bot</span>
+          </h2>
+          <button class="icon-btn icon-btn--sm" id="manageIconBtn" type="button">
+            <svg class="ic" aria-hidden="true"><use href="#i-settings" /></svg>
+          </button>
+        </div>
+
+        <!-- The bot is signing in and Microsoft wants a tap in Authenticator. -->
+        <div class="approve" id="approve" role="alert" hidden>
+          <span class="approve-number" id="approveNumber" aria-hidden="true"></span>
+          <span class="approve-copy">
+            <b id="approveTitle"></b>
+            <span id="approveText"></span>
+          </span>
+        </div>
+
+        <p class="bot-line" id="botLine"></p>
+
+        <form class="connect" id="connectForm" hidden>
+          <label class="field">
+            <span data-i18n="tokenLabel">API token</span>
+            <input id="tokenInput" type="password" autocomplete="off" spellcheck="false" required />
+          </label>
+          <button class="secondary" type="submit" data-i18n="connect">Connect</button>
+        </form>
+
+        <ul class="bot-accounts" id="botAccounts"></ul>
+
+        <ol class="bot-log" id="botLog" hidden></ol>
+      </section>
+
+      <section class="controls">
+        <button class="primary" id="runBtn" type="button" data-running="false" disabled>
+          <svg class="ic" aria-hidden="true"><use id="runIcon" href="#i-play" /></svg>
+          <span id="runText" data-i18n="botStart">Start farming</span>
+        </button>
+        <p class="status" id="status" role="status" aria-live="polite"></p>
+        <button class="link-btn" id="manageBtn" type="button">
+          <svg class="ic" aria-hidden="true"><use href="#i-settings" /></svg>
+          <span data-i18n="manage">Manage bot</span>
+        </button>
+      </section>
+    </main>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

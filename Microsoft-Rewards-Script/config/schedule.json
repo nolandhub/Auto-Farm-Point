@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "cron": "0 7 * * *",
+  "skipIfRunning": true,
+  "excludedAccountIndexes": [],
+  "updatedAt": "2026-09-28T14:03:49.293Z",
+  "timezone": "Asia/Ho_Chi_Minh"
+}

@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "Bing Auto Search",
+  "version": "4.0.0",
+  "description": "Shows your Microsoft Rewards points and tasks, and controls the Microsoft Rewards Script bot running on this machine.",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "tabs",
+    "scripting",
+    "alarms",
+    "storage",
+    "webNavigation",
+    "declarativeNetRequestWithHostAccess"
+  ],
+  "host_permissions": [
+    "https://*.bing.com/*",
+    "https://*.microsoft.com/*",
+    "https://login.live.com/*",
+    "http://127.0.0.1/*",
+    "http://localhost/*"
+  ],
+  "options_ui": {
+    "page": "manage/manage.html",
+    "open_in_tab": true
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Bing Auto Search"
+  },
+  "icons": {
+    "128": "icon.png"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  }
+}

@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bot manager</title>
+    <link rel="stylesheet" href="manage.css" />
+  </head>
+  <body>
+    <svg class="sprite" aria-hidden="true" focusable="false">
+      <symbol id="i-bot" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="3" /><path d="M12 8V4M9 14h.01M15 14h.01" /><circle cx="12" cy="3" r="1" /></symbol>
+      <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 2v6M15 2v6M6 8h12v4a6 6 0 0 1-12 0V8zM12 18v4" /></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4v16l13-8z" fill="currentColor" /></symbol>
+      <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" /></symbol>
+      <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="4" /><path d="M1 21a8 8 0 0 1 16 0" /><path d="M16 3.1a4 4 0 0 1 0 7.8M23 21a8 8 0 0 0-5-7.4" /></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></symbol>
+      <symbol id="i-list" viewBox="0 0 24 24"><path d="m3 7 2 2 4-4" /><path d="m3 17 2 2 4-4" /><path d="M13 6h8M13 12h8M13 18h8" /></symbol>
+      <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 17 6-5-6-5M12 19h8" /></symbol>
+      <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5M12 7v5l4 2" /></symbol>
+    </svg>
+
+    <header class="page-head">
+      <div class="brand">
+        <img class="logo" src="../icon.png" alt="" width="28" height="28" />
+        <h1 data-i18n="manageTitle">Bot manager</h1>
+      </div>
+      <span class="pill" id="statePill" data-state="offline">
+        <span class="pill-dot" aria-hidden="true"></span>
+        <span id="stateText">Offline</span>
+      </span>
+    </header>
+
+    <main class="grid">
+      <!-- Connection ------------------------------------------------------>
+      <section class="card" aria-labelledby="connTitle">
+        <h2 id="connTitle">
+          <svg class="ic" aria-hidden="true"><use href="#i-plug" /></svg>
+          <span data-i18n="secConnection">Connection</span>
+        </h2>
+        <p class="card-line" id="connLine" role="status" aria-live="polite"></p>
+        <form class="stack" id="connForm">
+          <label class="field">
+            <span data-i18n="apiUrl">API address</span>
+            <input id="urlInput" type="url" required spellcheck="false" />
+          </label>
+          <label class="field">
+            <span data-i18n="tokenLabel">API token</span>
+            <input id="tokenInput" type="password" autocomplete="off" spellcheck="false" />
+          </label>
+          <div class="row-end">
+            <button class="secondary" type="submit" data-i18n="save">Save</button>
+          </div>
+        </form>
+        <div class="help" id="dockerHelp">
+          <p class="hint" data-i18n="dockerHelp">To start the bot, run this in the Microsoft-Rewards-Script folder:</p>
+          <code>docker compose up -d</code>
+        </div>
+      </section>
+
+      <!-- Run ------------------------------------------------------------->
+      <section class="card" aria-labelledby="runTitle">
+        <h2 id="runTitle">
+          <svg class="ic" aria-hidden="true"><use href="#i-bot" /></svg>
+          <span data-i18n="secRun">Run</span>
+        </h2>
+        <div class="approve" id="approve" role="alert" hidden>
+          <span class="approve-number" id="approveNumber" aria-hidden="true"></span>
+          <span class="approve-copy">
+            <b id="approveTitle"></b>
+            <span id="approveText"></span>
+          </span>
+        </div>
+        <p class="card-line" id="runLine"></p>
+        <div class="row">
+          <button class="primary" id="runAllBtn" type="button">
+            <svg class="ic" aria-hidden="true"><use href="#i-play" /></svg>
+            <span data-i18n="runAll">Run all accounts</span>
+          </button>
+          <button class="secondary" id="stopBtn" type="button">
+            <svg class="ic" aria-hidden="true"><use href="#i-stop" /></svg>
+            <span data-i18n="stop">Stop</span>
+          </button>
+          <button class="danger-btn" id="killBtn" type="button" data-i18n="stopNow">Stop now</button>
+        </div>
+        <p class="status" id="runStatus" role="status" aria-live="polite"></p>
+      </section>
+
+      <!-- Accounts -------------------------------------------------------->
+      <section class="card span-2" aria-labelledby="accTitle">
+        <div class="card-head">
+          <h2 id="accTitle">
+            <svg class="ic" aria-hidden="true"><use href="#i-users" /></svg>
+            <span data-i18n="secAccounts">Accounts</span>
+          </h2>
+          <button class="secondary" id="addToggle" type="button" aria-expanded="false" aria-controls="addForm">
+            <svg class="ic" aria-hidden="true"><use href="#i-plus" /></svg>
+            <span data-i18n="addAccount">Add account</span>
+          </button>
+        </div>
+
+        <form class="add-form" id="addForm" hidden>
+          <label class="field">
+            <span data-i18n="emailLabel">Email</span>
+            <input name="email" type="email" required autocomplete="off" spellcheck="false" />
+          </label>
+          <label class="field">
+            <span data-i18n="passwordLabel">Password</span>
+            <input name="password" type="password" autocomplete="new-password" />
+            <span class="hint" data-i18n="passwordHint">Leave empty to sign in with Microsoft Authenticator.</span>
+          </label>
+          <label class="field">
+            <span data-i18n="totpLabel">2FA secret (TOTP)</span>
+            <input name="totpSecret" type="password" autocomplete="off" spellcheck="false" />
+            <span class="hint" data-i18n="totpHint">Optional.</span>
+          </label>
+          <label class="field">
+            <span data-i18n="recoveryLabel">Recovery email</span>
+            <input name="recoveryEmail" type="email" autocomplete="off" spellcheck="false" />
+          </label>
+          <label class="field">
+            <span data-i18n="countryLabel">Country</span>
+            <input name="geoLocale" type="text" value="auto" maxlength="4" spellcheck="false" />
+            <span class="hint" data-i18n="countryHint">auto, or two letters such as VN</span>
+          </label>
+          <label class="field">
+            <span data-i18n="langLabel">Language</span>
+            <input name="langCode" type="text" value="en" maxlength="12" spellcheck="false" />
+            <span class="hint" data-i18n="langHint">Keep en.</span>
+          </label>
+          <div class="row-end span-all">
+            <button class="secondary" type="button" id="addCancel" data-i18n="cancel">Cancel</button>
+            <button class="primary primary--inline" type="submit" data-i18n="addAccount">Add account</button>
+          </div>
+          <p class="status span-all" id="addStatus" role="status" aria-live="polite"></p>
+        </form>
+
+        <ul class="accounts" id="accountList"></ul>
+        <p class="status" id="accStatus" role="status" aria-live="polite"></p>
+      </section>
+
+      <!-- Schedule -------------------------------------------------------->
+      <section class="card" aria-labelledby="schedTitle">
+        <h2 id="schedTitle">
+          <svg class="ic" aria-hidden="true"><use href="#i-clock" /></svg>
+          <span data-i18n="secSchedule">Schedule</span>
+        </h2>
+        <div class="row">
+          <label class="switch">
+            <input type="checkbox" role="switch" id="schedOn" />
+            <span data-i18n="scheduleDaily">Run every day at</span>
+          </label>
+          <input class="time" type="time" id="schedTime" />
+        </div>
+        <p class="hint" id="schedInfo"></p>
+        <p class="status" id="schedStatus" role="status" aria-live="polite"></p>
+      </section>
+
+      <!-- Jobs ------------------------------------------------------------>
+      <section class="card" aria-labelledby="jobsTitle">
+        <h2 id="jobsTitle">
+          <svg class="ic" aria-hidden="true"><use href="#i-list" /></svg>
+          <span data-i18n="secJobs">What to farm</span>
+        </h2>
+        <p class="hint" data-i18n="jobsHint">Applies from the next run.</p>
+        <div class="jobs" id="jobs"></div>
+        <p class="status" id="jobsStatus" role="status" aria-live="polite"></p>
+      </section>
+
+      <!-- Log ------------------------------------------------------------->
+      <section class="card span-2" aria-labelledby="logTitle">
+        <div class="card-head">
+          <h2 id="logTitle">
+            <svg class="ic" aria-hidden="true"><use href="#i-terminal" /></svg>
+            <span data-i18n="secLog">Activity log</span>
+          </h2>
+          <label class="switch">
+            <input type="checkbox" role="switch" id="warnOnly" />
+            <span data-i18n="logWarnOnly">Warnings and errors only</span>
+          </label>
+        </div>
+        <ol class="log" id="log" tabindex="0"></ol>
+      </section>
+
+      <!-- History --------------------------------------------------------->
+      <section class="card span-2" aria-labelledby="histTitle">
+        <h2 id="histTitle">
+          <svg class="ic" aria-hidden="true"><use href="#i-history" /></svg>
+          <span data-i18n="secHistory">Recent runs</span>
+        </h2>
+        <ul class="history" id="history"></ul>
+      </section>
+    </main>
+
+    <dialog class="dialog" id="editDialog" aria-labelledby="editTitle">
+      <form class="stack" id="editForm" method="dialog">
+        <h2 id="editTitle"></h2>
+        <p class="hint" data-i18n="keepBlank">Leave a field empty to keep it as it is.</p>
+        <label class="field">
+          <span data-i18n="passwordLabel">Password</span>
+          <input name="password" type="password" autocomplete="new-password" />
+        </label>
+        <label class="field">
+          <span data-i18n="totpLabel">2FA secret (TOTP)</span>
+          <input name="totpSecret" type="password" autocomplete="off" spellcheck="false" />
+        </label>
+        <label class="switch">
+          <input type="checkbox" role="switch" name="clearTotp" />
+          <span data-i18n="clearTotp">Remove the 2FA secret</span>
+        </label>
+        <label class="field">
+          <span data-i18n="countryLabel">Country</span>
+          <input name="geoLocale" type="text" maxlength="4" spellcheck="false" />
+        </label>
+        <label class="field">
+          <span data-i18n="langLabel">Language</span>
+          <input name="langCode" type="text" maxlength="12" spellcheck="false" />
+          <span class="hint" data-i18n="langHint">Keep en.</span>
+        </label>
+        <p class="status" id="editStatus" role="status" aria-live="polite"></p>
+        <div class="row-end">
+          <button class="secondary" type="button" id="editCancel" data-i18n="cancel">Cancel</button>
+          <button class="primary primary--inline" type="submit" data-i18n="save">Save</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script type="module" src="manage.js"></script>
+  </body>
+</html>
