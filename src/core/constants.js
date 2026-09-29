@@ -11,7 +11,7 @@ export const SCHEMA_VERSION = 3;
  * fresh from disk; the popup compares this with the worker's copy and asks for
  * a reload when they differ.
  */
-export const BUILD = "2026-09-29.4";
+export const BUILD = "2026-09-29.5";
 
 export const STORAGE_KEYS = {
   run: "run.v3",

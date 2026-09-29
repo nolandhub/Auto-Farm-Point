@@ -454,7 +454,11 @@ async function signInByHand(account) {
   const { url } = await getConnection();
   await act(
     "accStatus",
-    () => openManualLogin({ api, connectionUrl: url, email: account.email }),
+    async () => {
+      await openManualLogin({ api, connectionUrl: url, email: account.email });
+      // The worker follows it from here and closes the page once the sign-in is saved.
+      void chrome.runtime.sendMessage({ action: "watchManualLogin" }).catch(() => {});
+    },
     t(lang, "manualLoginOpened")
   );
 }

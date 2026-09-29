@@ -50,6 +50,11 @@ const HANDLERS = {
     return { ok: true };
   },
   refreshBadge: () => refreshBadge(),
+  // The manager opened a sign-in page: follow it now rather than at the next minute's check.
+  watchManualLogin: () => {
+    void checkManualLogin();
+    return { watching: true };
+  },
 };
 
 // Deliberately not an async function: an async listener returns a Promise,
@@ -111,5 +116,5 @@ void (async () => {
   await ensureAlarm(ALARMS.netsky, BADGE_PERIOD_MINUTES);
   await ensureAlarm(ALARMS.balance, BALANCE_PERIOD_MINUTES);
   await refreshBadge();
-  await checkManualLogin();
+  void checkManualLogin();
 })();

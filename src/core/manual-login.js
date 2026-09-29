@@ -43,8 +43,18 @@ export async function openManualLogin({ api, connectionUrl, email, tabs = chrome
   return status;
 }
 
-/** One pass; the worker runs it every minute. */
-export async function tickManualLogin({ api, connectionUrl, tabs = chrome.tabs, storage = chrome.storage.local }) {
+// The minute alarm and a running watch can both tick: one at a time, so a page
+// is closed and an account rerun once.
+let queue = Promise.resolve();
+
+/** One pass; the worker runs it every minute, and the watch below when a sign-in ends. */
+export function tickManualLogin(options) {
+  const next = queue.then(() => tick(options));
+  queue = next.catch(() => {});
+  return next;
+}
+
+async function tick({ api, connectionUrl, tabs = chrome.tabs, storage = chrome.storage.local }) {
   let status;
   try {
     status = await api.manualLoginStatus();
@@ -82,12 +92,54 @@ export async function tickManualLogin({ api, connectionUrl, tabs = chrome.tabs, 
   return null;
 }
 
-/** The worker's entry point: the saved connection, one tick, failures logged. */
+const WATCH_INTERVAL_MS = 3_000;
+// The API gives a sign-in 15 minutes; a little longer covers its last status.
+const WATCH_LIMIT_MS = 16 * 60 * 1000;
+
+/**
+ * Follows a sign-in opened from here every few seconds, so its page closes and
+ * the account reruns right after the session is saved, not at the next
+ * minute's check. That check stays the fallback when the worker is stopped.
+ */
+export async function watchManualLogin({
+  api,
+  connectionUrl,
+  tabs = chrome.tabs,
+  storage = chrome.storage.local,
+  intervalMs = WATCH_INTERVAL_MS,
+  limitMs = WATCH_LIMIT_MS,
+  now = Date.now,
+  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+}) {
+  const until = now() + limitMs;
+  while (now() < until) {
+    // A storage read each pass is also an extension API call, which keeps the worker alive.
+    if (!(await load(storage)).email) return null;
+    const status = await api.manualLoginStatus().catch(() => null); // the API may be restarting
+    if (status && status.state !== "running") return tickManualLogin({ api, connectionUrl, tabs, storage });
+    await sleep(intervalMs);
+  }
+  return null;
+}
+
+let watching = false;
+
+/** The worker's entry point: the saved connection, one tick, then the watch; failures logged. */
 export async function checkManualLogin() {
   try {
     const connection = await getConnection();
     if (!connection.token) return null;
-    return await tickManualLogin({ api: createClient(connection), connectionUrl: connection.url });
+    const api = createClient(connection);
+    const result = await tickManualLogin({ api, connectionUrl: connection.url });
+    if (!watching) {
+      watching = true;
+      try {
+        await watchManualLogin({ api, connectionUrl: connection.url });
+      } finally {
+        watching = false;
+      }
+    }
+    return result;
   } catch (error) {
     log.warn("manual login check failed", { error: String(error?.message ?? error) });
     return null;

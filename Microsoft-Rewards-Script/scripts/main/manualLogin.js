@@ -28,6 +28,7 @@ import {
     resolveEmailArgument,
     saveSessionRow
 } from '../utils.js'
+import { signInCookies } from './sessionSeed.js'
 
 const REWARDS_LOGIN_URL = 'https://rewards.bing.com/auth/login'
 const REWARDS_HOST = 'rewards.bing.com'
@@ -275,7 +276,7 @@ function saveManualSession(dbPath, email, platform, storageState, fingerprint, p
     } catch {}
 }
 
-async function runPlatform({ account, config, dbPath, platform, fresh }) {
+async function runPlatform({ account, config, dbPath, platform, fresh, seedCookies = [] }) {
     const isMobile = platform === 'mobile'
     const stored = loadStoredSession(dbPath, account.email, platform, fresh)
     const locale = resolveLocale(account, stored.resolvedCountry)
@@ -359,6 +360,12 @@ async function runPlatform({ account, config, dbPath, platform, fresh }) {
             })
         }
 
+        // The sign-in just saved for the other platform: Microsoft lets this browser in without another code
+        if (seedCookies.length) {
+            await context.addCookies(seedCookies)
+            log('INFO', `Reusing the Microsoft sign-in from the previous platform | cookies=${seedCookies.length}`)
+        }
+
         const page = await context.newPage()
         await page.goto(REWARDS_LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: globalTimeout }).catch(error => {
             log('WARN', `Initial Rewards navigation did not finish cleanly: ${error.message}`)
@@ -378,6 +385,7 @@ async function runPlatform({ account, config, dbPath, platform, fresh }) {
             'SUCCESS',
             `Saved ${platform} session for ${account.email} | cookies=${storageState.cookies.length} | origins=${storageState.origins.length}`
         )
+        return storageState
     } finally {
         process.removeListener('SIGINT', onSigInt)
         process.removeListener('SIGTERM', onSigTerm)
@@ -431,8 +439,11 @@ async function main() {
         log('INFO', 'experimental.blockMedia=true is deferred so authentication images and media remain available')
     }
 
+    // With --platform both, the second browser reuses the first one's sign-in (one emailed code, not two)
+    let seedCookies = []
     for (const platform of platforms) {
-        await runPlatform({ account, config, dbPath, platform, fresh })
+        const storageState = await runPlatform({ account, config, dbPath, platform, fresh, seedCookies })
+        seedCookies = signInCookies(storageState.cookies)
     }
 
     log('SUCCESS', `Manual login completed for ${account.email}`)

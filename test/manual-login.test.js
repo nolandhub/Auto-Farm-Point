@@ -128,3 +128,61 @@ test("an API without manual login is left alone", async () => {
   assert.equal(await ml.tickManualLogin({ api, connectionUrl: CONNECTION_URL, tabs, storage: fakeStorage() }), null);
   assert.equal(tabs.created.length, 0);
 });
+
+test("the page closes within a few seconds of the sign-in being saved", async () => {
+  const api = fakeApi({
+    manual: { ...PAGE, state: "idle", requests: [REQUEST] },
+    accounts: [{ index: 4, email: "me@example.com" }],
+  });
+  const tabs = fakeTabs();
+  const storage = fakeStorage();
+  await ml.tickManualLogin({ api, connectionUrl: CONNECTION_URL, tabs, storage });
+
+  const naps = [];
+  const sleep = async (ms) => {
+    naps.push(ms);
+    // The user finishes signing in after two polls.
+    if (naps.length === 2) api.manual = { ...PAGE, state: "succeeded", email: "me@example.com", requests: [] };
+  };
+  const result = await ml.watchManualLogin({ api, connectionUrl: CONNECTION_URL, tabs, storage, sleep });
+  assert.equal(result, "rerun");
+  assert.deepEqual(naps, [3000, 3000]);
+  assert.deepEqual(tabs.removed, [42]);
+  assert.deepEqual(api.calls.at(-1), ["start", { accountIndex: 4 }]);
+});
+
+test("nothing opened from here, nothing to watch", async () => {
+  const api = fakeApi({ manual: { ...PAGE, state: "running", email: "me@example.com", requests: [] } });
+  const naps = [];
+  const result = await ml.watchManualLogin({
+    api,
+    connectionUrl: CONNECTION_URL,
+    tabs: fakeTabs(),
+    storage: fakeStorage(),
+    sleep: async (ms) => naps.push(ms),
+  });
+  assert.equal(result, null);
+  assert.equal(naps.length, 0);
+});
+
+test("the watch gives up after its limit and leaves the rest to the per-minute check", async () => {
+  const api = fakeApi({ manual: { ...PAGE, state: "idle", requests: [REQUEST] } });
+  const tabs = fakeTabs();
+  const storage = fakeStorage();
+  await ml.tickManualLogin({ api, connectionUrl: CONNECTION_URL, tabs, storage });
+
+  let clock = 0;
+  const result = await ml.watchManualLogin({
+    api,
+    connectionUrl: CONNECTION_URL,
+    tabs,
+    storage,
+    limitMs: 10_000,
+    now: () => clock,
+    sleep: async (ms) => {
+      clock += ms;
+    },
+  });
+  assert.equal(result, null);
+  assert.deepEqual(tabs.removed, [], "a sign-in still running keeps its page");
+});

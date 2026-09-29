@@ -31,10 +31,17 @@ Nobody types a command.
    new tab. The badge shows an amber `!` while a manual login is open.
 3. **The user signs in** in that tab.
 4. **Done.** `manual-login` saves the session once the browser has stayed on
-   `rewards.bing.com` for five seconds (desktop session too, one after the
-   other). The API reports `succeeded`; the extension closes the tab it opened
-   and starts a run for that account with `POST /start {accountIndex}`. If the
-   bot is busy, it waits and starts that run once the bot is idle.
+   `rewards.bing.com` for five seconds, then opens the desktop browser. That
+   one reuses the Microsoft sign-in cookies just saved (`scripts/main/
+   sessionSeed.js`: `live.com` and Microsoft login domains only; every MUID,
+   `fptctx2` and all Bing cookies stay per platform, so Bing still sees two
+   devices), reaches Rewards on its own and is saved too: one sign-in, one
+   code. Measured on 2026-09-29: the desktop step took about 10 seconds with
+   no input, its Bing `MUID` differed from the phone's, and Microsoft issued
+   it its own `__Host-MSAAUTHP`. The API reports `succeeded`; the extension,
+   which polls every 3 seconds while a page it opened is running, closes the
+   tab and starts a run for that account with `POST /start {accountIndex}`.
+   If the bot is busy, it waits and starts that run once the bot is idle.
 5. **Nobody came.** After 15 minutes without success the API stops the
    browser and reports `timedOut`.
 
