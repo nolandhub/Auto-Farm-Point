@@ -12,6 +12,7 @@ import { TotpLogin } from './methods/Totp2FALogin'
 import { CodeLogin } from './methods/GetACodeLogin'
 import { RecoveryLogin } from './methods/RecoveryEmailLogin'
 import { canPromptForInput } from './methods/LoginUtils'
+import { shouldTreatLoginAlertAsFatal } from './LoginState'
 
 import type { Account } from '../../interface/Account'
 
@@ -54,6 +55,8 @@ export class Login {
     private readonly capturedUnknownUrls = new Set<string>()
     private signInMethodsLogged = false
     private passwordlessMethodSelected = false
+    private postKmsiAccepted = false
+    private loginAlertObservations = 0
 
     private readonly selectors = {
         primaryButton: 'button[data-testid="primaryButton"]',
@@ -96,6 +99,8 @@ export class Login {
             this.capturedUnknownUrls.clear()
             this.signInMethodsLogged = false
             this.passwordlessMethodSelected = false
+            this.postKmsiAccepted = false
+            this.loginAlertObservations = 0
             this.bot.logger.info(this.bot.isMobile, 'LOGIN', 'Starting login process')
 
             await page
@@ -284,14 +289,29 @@ export class Login {
         }
 
         if (foundStates.includes('ERROR_ALERT')) {
-            const errorIsReal = hostname === 'login.live.com' && !foundStates.includes('2FA_TOTP')
+            const alertText = await page
+                .locator(this.selectors.errorAlert)
+                .first()
+                .textContent({ timeout: 500 })
+                .catch(() => '')
+            const normalizedAlertText = alertText?.trim() ?? ''
+            if (hostname === 'login.live.com' && normalizedAlertText) this.loginAlertObservations++
+            else this.loginAlertObservations = 0
+            const errorIsReal = shouldTreatLoginAlertAsFatal({
+                hostname,
+                alertText: normalizedAlertText,
+                postKmsi: this.postKmsiAccepted,
+                consecutiveObservations: this.loginAlertObservations
+            })
             this.bot.logger.debug(
                 this.bot.isMobile,
                 'DETECT-STATE',
-                `ERROR_ALERT found - hostname: ${hostname}, has 2FA: ${foundStates.includes('2FA_TOTP')}, treating as real: ${errorIsReal}`
+                `ERROR_ALERT found - hostname: ${hostname}, textPresent=${Boolean(alertText?.trim())}, postKmsi=${this.postKmsiAccepted}, observations=${this.loginAlertObservations}, treating as real: ${errorIsReal}`
             )
             if (errorIsReal) return 'ERROR_ALERT'
             foundStates = foundStates.filter(s => s !== 'ERROR_ALERT')
+        } else {
+            this.loginAlertObservations = 0
         }
 
         const priorities: LoginState[] = [
@@ -468,9 +488,19 @@ export class Login {
 
             case 'ERROR_ALERT': {
                 const alertEl = page.locator(this.selectors.errorAlert)
-                const errorMsg = await alertEl.innerText().catch(() => 'Unknown Error')
-                this.bot.logger.error(this.bot.isMobile, 'LOGIN', `Account error: ${errorMsg}`)
-                throw new Error(`Microsoft login error: ${errorMsg}`)
+                const errorMsg = (
+                    (await alertEl
+                        .first()
+                        .textContent({ timeout: 500 })
+                        .catch(() => '')) ?? ''
+                ).replace(/\s+/g, ' ').trim()
+                const detail = errorMsg || 'Microsoft displayed an empty login alert'
+                this.bot.logger.error(
+                    this.bot.isMobile,
+                    'LOGIN',
+                    `Account error: ${detail} | url=${page.url()}`
+                )
+                throw new Error(`Microsoft login error: ${detail}`)
             }
 
             case 'LOGGED_IN':
@@ -758,6 +788,21 @@ export class Login {
                     return false
                 }
                 await this.waitForIdle(page, 'after KMSI acceptance')
+                this.postKmsiAccepted = true
+                this.loginAlertObservations = 0
+                await page
+                    .waitForURL(
+                        url => {
+                            const hostname = new URL(url).hostname.toLowerCase()
+                            return (
+                                hostname === 'bing.com' ||
+                                hostname.endsWith('.bing.com') ||
+                                hostname === 'account.microsoft.com'
+                            )
+                        },
+                        { waitUntil: 'domcontentloaded', timeout: 10000 }
+                    )
+                    .catch(() => {})
                 this.bot.logger.info(this.bot.isMobile, 'LOGIN', 'KMSI prompt accepted')
                 return true
             }

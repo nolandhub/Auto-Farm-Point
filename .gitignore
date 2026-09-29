@@ -1,0 +1,10 @@
+# Keep the bundled bot source in the main repository, but never commit its
+# credentials or runtime state.
+Microsoft-Rewards-Script/.env
+Microsoft-Rewards-Script/accounts.env
+Microsoft-Rewards-Script/config/
+Microsoft-Rewards-Script/sessions/
+Microsoft-Rewards-Script/node_modules/
+Microsoft-Rewards-Script/dist/
+Microsoft-Rewards-Script/diagnostics/
+Microsoft-Rewards-Script/.git/

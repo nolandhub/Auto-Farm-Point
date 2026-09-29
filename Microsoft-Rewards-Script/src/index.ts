@@ -595,6 +595,7 @@ export class MicrosoftRewardsBot {
 
         let mobileSession: BrowserSession | null = null
         let desktopSession: BrowserSession | null = null
+        let mobileLoginSucceeded = false
         const edgeBrowsingController = new AbortController()
         let edgeBrowsingTask: Promise<void> | null = null
         let edgeBrowsingFinished = false
@@ -605,8 +606,10 @@ export class MicrosoftRewardsBot {
             mobileSession = null
 
             await executionContext.run({ isMobile: true, account }, async () => {
-                await this.browser.func.checkpointActiveSession('PRE-BROWSER-CLOSE')
-                await this.browser.func.closeBrowser(session.context, accountEmail)
+                if (mobileLoginSucceeded) {
+                    await this.browser.func.checkpointActiveSession('PRE-BROWSER-CLOSE')
+                }
+                await this.browser.func.closeBrowser(session.context, accountEmail, mobileLoginSucceeded)
             })
         }
 
@@ -630,6 +633,7 @@ export class MicrosoftRewardsBot {
                 this.logger.info('main', 'BROWSER', `Mobile Browser started | ${accountEmail}`)
 
                 await this.login.login(this.mainMobilePage, account)
+                mobileLoginSucceeded = true
 
                 if (needsAppAccessToken) {
                     try {
