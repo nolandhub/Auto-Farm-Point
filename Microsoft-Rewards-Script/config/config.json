@@ -2,7 +2,7 @@
   "sessionPath": "sessions",
   "headless": true,
   "clusters": 1,
-  "errorDiagnostics": false,
+  "errorDiagnostics": true,
   "ensureStreakProtection": true,
   "autoClaimPunchcardRewards": false,
   "contintueOnBotWarning": false,
