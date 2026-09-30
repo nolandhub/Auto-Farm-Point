@@ -11,7 +11,7 @@ export const SCHEMA_VERSION = 3;
  * fresh from disk; the popup compares this with the worker's copy and asks for
  * a reload when they differ.
  */
-export const BUILD = "2026-09-29.5";
+export const BUILD = "2026-09-30.1";
 
 export const STORAGE_KEYS = {
   run: "run.v3",
@@ -25,6 +25,10 @@ export const STORAGE_KEYS = {
   balance: "balance.v1",
   // Which manual sign-ins were opened, the page's tab, and accounts to rerun.
   manualLogin: "manualLogin.v1",
+  // Which account the popup's dashboard shows, and which one is signed in to Edge.
+  view: "view.v1",
+  // Balance ledgers of the bot's accounts, keyed by email; see ledger.js.
+  accountBalances: "accountBalances.v1",
 };
 
 /**

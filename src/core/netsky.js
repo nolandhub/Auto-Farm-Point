@@ -95,6 +95,9 @@ export function createClient({ url, token }, fetchImpl = (...args) => globalThis
     status: () => call("GET", "/status"),
     points: () => call("GET", "/points"),
     accounts: () => call("GET", "/accounts"),
+    // One Rewards page (flyout, earn, quest) of an account, read with its saved session.
+    accountRewards: (index, page, id) =>
+      call("GET", `/accounts/${Number(index)}/rewards${query({ page, id })}`),
     sessions: () => call("GET", "/sessions"),
     logs: ({ afterId, limit, level } = {}) => call("GET", `/logs${query({ afterId, limit, level })}`),
     errors: () => call("GET", "/errors"),

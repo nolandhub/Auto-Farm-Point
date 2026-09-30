@@ -16,9 +16,10 @@ import {
 } from './configEditor.js'
 import { readSchedule, writeSchedule } from './scheduleStore.js'
 import { addAccount, readAccountFields, removeAccount, updateAccount } from './accountStore.js'
-import { deleteStoredSessions, listStoredSessions } from './sessionStore.js'
+import { deleteStoredSessions, listStoredSessions, loadStoredSession } from './sessionStore.js'
 import { ManualLoginManager } from './manualLoginManager.js'
 import { DnsWatchdog } from './dnsWatchdog.js'
+import { RewardsReader } from './rewardsReader.js'
 import { resolveRunCommand } from './runCommand.js'
 import {
     log,
@@ -119,6 +120,7 @@ const ALLOW_CONFIG_WRITE = envBool('API_ALLOW_CONFIG_WRITE', false)
 const ALLOW_SCHEDULE_WRITE = envBool('API_ALLOW_SCHEDULE_WRITE', false)
 const ALLOW_ACCOUNT_WRITE = envBool('API_ALLOW_ACCOUNT_WRITE', false)
 const ALLOW_MANUAL_LOGIN = envBool('API_ALLOW_MANUAL_LOGIN', false)
+const ALLOW_ACCOUNT_VIEW = envBool('API_ALLOW_ACCOUNT_VIEW', false)
 // Exits when the container's DNS is stuck; only for a container with a restart policy
 const DNS_WATCHDOG = envBool('API_DNS_WATCHDOG', false)
 
@@ -160,6 +162,13 @@ pm.on('log', entry => {
 
 const manualLogin = new ManualLoginManager({ projectRoot, note: (level, message) => pm.note(level, message) })
 pm.on('log', entry => manualLogin.observeLog(entry))
+
+const rewardsReader = new RewardsReader({
+    loadSession: email => {
+        const sessionPath = loadConfigSafe(projectRoot)?.data?.sessionPath
+        return loadStoredSession(projectRoot, typeof sessionPath === 'string' ? sessionPath : 'sessions', email)
+    }
+})
 
 function toHistoryRecord(entry) {
     return {
@@ -365,6 +374,7 @@ const requestHandler = async (req, res) => {
                     'POST /config/sync',
                     'GET /schedule',
                     'GET|POST|DELETE /manual-login',
+                    'GET /accounts/:n/rewards?page=flyout|earn|quest&id=',
                     'POST /start',
                     'POST /stop',
                     'POST /restart',
@@ -625,6 +635,29 @@ const requestHandler = async (req, res) => {
         // sse
         if (method === 'GET' && pathname === '/events') {
             return handleEventStream(req, res, url)
+        }
+
+        // one account's Rewards pages, read with its saved session, for the extension's dashboard
+        const rewardsRoute = /^\/accounts\/(\d+)\/rewards$/.exec(pathname)
+        if (method === 'GET' && rewardsRoute) {
+            if (!ALLOW_ACCOUNT_VIEW) {
+                return sendJson(res, 403, {
+                    error: 'Account views are disabled. Set API_ALLOW_ACCOUNT_VIEW=true to enable them.',
+                    code: 'ACCOUNT_VIEW_DISABLED'
+                })
+            }
+            const account = loadAccounts().find(a => Number(a.index) === Number(rewardsRoute[1]))
+            if (!account) {
+                return sendJson(res, 404, { error: 'No configured account has that number.', code: 'UNKNOWN_ACCOUNT' })
+            }
+            try {
+                const page = url.searchParams.get('page') ?? undefined
+                const id = url.searchParams.get('id') ?? undefined
+                return sendJson(res, 200, await rewardsReader.read(account.email, page, id))
+            } catch (err) {
+                const status = { BAD_REQUEST: 400, NO_SESSION: 409 }[err.code] ?? 502
+                return sendJson(res, status, { error: err.message, code: err.code ?? 'UPSTREAM' })
+            }
         }
 
         // manual login: the bot's browser on the noVNC page, for sign-ins it cannot finish alone

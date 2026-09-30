@@ -1,4 +1,5 @@
-import { BUILD, QUOTA } from "../src/core/constants.js";
+import { EDGE, nextView } from "../src/core/account-view.js";
+import { BUILD, QUOTA, STORAGE_KEYS } from "../src/core/constants.js";
 import { resolveLang, t } from "../src/core/i18n.js";
 import {
   createClient,
@@ -38,6 +39,8 @@ const BOT_SLOW_MS = 15_000;
 const BOT_LOG_KEEP = 60;
 const BOT_LOG_SHOWN = 3;
 const BOT_ACCOUNTS_SHOWN = 4;
+/** A bot account on the dashboard is re-read this often; the bot's API caches a minute. */
+const VIEW_REFRESH_MS = 60_000;
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 const el = (id) => document.getElementById(id);
@@ -63,6 +66,21 @@ let api = null;
 let botTimer = null;
 /** A start or stop is on its way; the button waits for it. */
 let acting = false;
+
+/**
+ * Which account the dashboard shows: EDGE (the browser's own) or a bot
+ * account's email. `followed` is the running account the view last followed;
+ * `prefs` the user's pick and which bot account Edge is signed in to; `reads`
+ * each bot account's last reading.
+ */
+const viewing = {
+  view: EDGE,
+  followed: null,
+  prefs: { pick: EDGE, edgeEmail: null, edgeUserId: null },
+  reads: new Map(),
+  reading: false,
+  timer: null,
+};
 
 // ------------------------------------------------------------------ helpers
 
@@ -160,27 +178,151 @@ function applyLanguage() {
 // ------------------------------------------------------------------ render
 
 /**
- * What the bot collected today, from its finished runs. A live run is left
- * out: until it ends, the bot counts each search twice. Only with a single
- * account: with several, the popup cannot tell which one is signed in to Edge.
+ * What the bot collected today for one account, from its finished runs. A live
+ * run is left out: its figures come from the search counters, and only a
+ * finished run is measured against the balance. Without an email, all runs,
+ * and only with a single account: the popup cannot tell which is Edge's.
  */
-function botEarnedToday() {
-  if (bot.phase !== "ready" || bot.accounts?.length !== 1) return null;
+function botEarnedToday(email = null) {
+  if (bot.phase !== "ready" || (!email && bot.accounts?.length !== 1)) return null;
   const today = dateKey();
   let total = 0;
   for (const run of bot.history) {
-    if (dateKey(new Date(run.startedAt)) === today) total += run.collected ?? 0;
+    if (dateKey(new Date(run.startedAt)) !== today) continue;
+    total += email ? (run.accounts?.find((a) => a.email === email)?.collected ?? 0) : (run.collected ?? 0);
   }
   return total;
 }
 
+// ------------------------------------------------------------ viewed account
+
+/** The bot account Edge is signed in to, while Edge still is. */
+function edgeEmail() {
+  const { edgeEmail: email, edgeUserId } = viewing.prefs;
+  return email && edgeUserId && edgeUserId === snap?.dashboard?.userId ? email : null;
+}
+
+/** The bot account the dashboard shows, or null for Edge's own dashboard. */
+function viewedAccount() {
+  if (bot.phase !== "ready" || viewing.view === EDGE || viewing.view === edgeEmail()) return null;
+  return bot.accounts?.find((account) => account.email === viewing.view) ?? null;
+}
+
+/** What the dashboard shows: { dash, tasks, readOnly, botPoints }. */
+function shown() {
+  const account = viewedAccount();
+  if (!account) {
+    const edge = edgeEmail();
+    return { dash: todaysDashboard(), tasks: snap.tasks, readOnly: false, botPoints: botEarnedToday(edge) };
+  }
+  const read = viewing.reads.get(account.email);
+  const readAt = read?.dashboard?.readAt;
+  const dash = readAt && dateKey(new Date(readAt)) === dateKey() ? read.dashboard : null;
+  return { dash, tasks: dash ? read.tasks : null, readOnly: true, botPoints: botEarnedToday(account.email) };
+}
+
+async function loadPrefs() {
+  try {
+    const stored = await chrome.storage.local.get(STORAGE_KEYS.view);
+    viewing.prefs = { ...viewing.prefs, ...(stored?.[STORAGE_KEYS.view] ?? {}) };
+  } catch {
+    // The dashboard then starts on Edge.
+  }
+  viewing.view = viewing.prefs.pick;
+}
+
+function savePrefs() {
+  return chrome.storage.local.set({ [STORAGE_KEYS.view]: viewing.prefs }).catch(() => {});
+}
+
+/** A bot account whose Rewards user is Edge's is Edge: shown with Edge's own data. */
+function learnEdge(email, userId) {
+  if (!userId || userId !== snap?.dashboard?.userId) return;
+  if (viewing.prefs.edgeEmail === email && viewing.prefs.edgeUserId === userId) return;
+  viewing.prefs = { ...viewing.prefs, edgeEmail: email, edgeUserId: userId };
+  void savePrefs();
+}
+
+/** Reads the viewed bot account through the worker; the dashboard keeps its last good reading. */
+async function loadView({ silent = true } = {}) {
+  const account = viewedAccount();
+  if (!account || viewing.reading) return;
+  viewing.reading = true;
+  if (!silent) {
+    refreshing = true;
+    renderLive();
+  }
+  try {
+    const result = await send("readAccountView", { email: account.email, index: account.index });
+    if (result?.ok) {
+      viewing.reads.set(account.email, { dashboard: result.dashboard, tasks: result.tasks });
+      learnEdge(account.email, result.dashboard.userId);
+    } else {
+      const before = viewing.reads.get(account.email) ?? {};
+      viewing.reads.set(account.email, { ...before, code: result?.code ?? null, failedAt: Date.now() });
+    }
+  } finally {
+    viewing.reading = false;
+    refreshing = false;
+    renderDashboard();
+  }
+}
+
+function scheduleView() {
+  clearTimeout(viewing.timer);
+  viewing.timer = setTimeout(async () => {
+    if (!document.hidden) await loadView();
+    scheduleView();
+  }, VIEW_REFRESH_MS);
+}
+
+/** Edge (unless it is one of the bot's accounts), then each bot account. */
+function renderViewPicker() {
+  const row = el("viewRow");
+  const select = el("viewSelect");
+  const accounts = bot.phase === "ready" ? (bot.accounts ?? []) : [];
+  row.hidden = accounts.length === 0;
+  if (row.hidden) return;
+
+  const edge = edgeEmail();
+  const options = [
+    ...(edge ? [] : [[EDGE, t(lang, "viewEdge")]]),
+    ...accounts.map((a) => [a.email, a.email === edge ? t(lang, "viewEdgeTag", { email: a.email }) : a.email]),
+  ];
+  const selected = viewedAccount()?.email ?? edge ?? EDGE;
+  // Rebuilt only on a change: rebuilding would close the list while it is open.
+  const key = JSON.stringify([options, selected]);
+  if (select.dataset.key === key) return;
+  select.dataset.key = key;
+  select.textContent = "";
+  for (const [value, label] of options) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    select.append(option);
+  }
+  select.value = selected;
+}
+
+/** The hero, the two tiles and the tasks, for the account being shown. */
+function renderDashboard() {
+  if (!snap) return;
+  const view = shown();
+  renderViewPicker();
+  renderHero(view.dash, view.botPoints);
+  renderTile("pc", view.dash);
+  renderTile("mobile", view.dash);
+  renderTasks(view);
+  renderLive();
+}
+
 /** Today's points, the balance, and the ring for search points across devices. */
-function renderHero(dash) {
+function renderHero(dash, botPoints) {
   const today = pickToday({
     earned: dash?.earnedToday,
     exact: dash?.earnedExact,
     dailyPoint: dash?.todayPoints,
-    bot: botEarnedToday(),
+    bot: botPoints,
   });
   if (today !== null) setNumber(el("todayPoints"), today);
   else {
@@ -259,7 +401,7 @@ const TASK_STATE = {
 const APP_LABELS = { desktop: "stateAppDesktop", mobile: "stateAppMobile" };
 
 /** Icon and a word for each state: the colour alone never carries it. */
-function taskRow(task) {
+function taskRow(task, readOnly = false) {
   const state = TASK_STATE[task.state] ?? TASK_STATE.manual;
   const item = document.createElement("li");
   item.className = "task";
@@ -290,6 +432,15 @@ function taskRow(task) {
   points.className = "task-points";
   points.textContent = task.points > 0 ? `+${fmt(task.points)}` : "";
   points.hidden = !(task.points > 0);
+
+  if (readOnly) {
+    // Another account's task: opened here, Edge would collect it for its own account.
+    const row = document.createElement("div");
+    row.className = "task-link task-link--static";
+    row.append(badge, body, points);
+    item.append(row);
+    return item;
+  }
 
   const open = icon("#i-external");
   open.classList.add("task-open");
@@ -331,13 +482,13 @@ function setStatus(text, tone = "") {
  * Today's tasks: a done/total bar, what is left in points, then the list with
  * open tasks first. Four rows, the rest behind "show more".
  */
-function renderTasks() {
+function renderTasks({ dash, tasks, readOnly }) {
   const box = el("tasks");
   const list = el("taskList");
   const toggle = el("tasksToggle");
   list.textContent = "";
 
-  const { items = [], done = 0, total = 0, pointsLeft = 0 } = snap.tasks ?? {};
+  const { items = [], done = 0, total = 0, pointsLeft = 0 } = tasks ?? {};
   const allDone = total > 0 && done === total;
   box.dataset.allDone = String(allDone);
   el("tasksCount").textContent = total > 0 ? t(lang, "tasksProgress", { done, total }) : "";
@@ -352,7 +503,7 @@ function renderTasks() {
   const auto = items.filter((task) => task.state === "auto").length;
   el("tasksCaption").textContent =
     total === 0
-      ? t(lang, todaysDashboard() ? "tasksNoneToday" : "tasksEmpty")
+      ? t(lang, dash ? "tasksNoneToday" : "tasksEmpty")
       : allDone
         ? t(lang, "tasksAllDone")
         : auto > 0
@@ -360,7 +511,7 @@ function renderTasks() {
           : t(lang, "tasksPointsLeft", { points: fmt(pointsLeft) });
 
   const visible = tasksExpanded ? items : items.slice(0, TASKS_COLLAPSED);
-  for (const task of visible) list.append(taskRow(task));
+  for (const task of visible) list.append(taskRow(task, readOnly));
 
   const hidden = items.length - TASKS_COLLAPSED;
   toggle.hidden = hidden <= 0;
@@ -375,15 +526,27 @@ function renderLive() {
   if (!snap) return;
   const live = el("live");
   const text = el("liveText");
-  const dash = snap.dashboard;
+  const account = viewedAccount();
+  const read = account ? viewing.reads.get(account.email) : null;
+  const dash = account ? read?.dashboard : snap.dashboard;
+  const failedAt = account ? read?.failedAt : dash?.failedAt;
   let state;
   if (refreshing) {
     state = "refreshing";
     text.textContent = t(lang, "liveRefreshing");
+  } else if (account && (read?.code === "NO_SESSION" || read?.code === "SIGNED_OUT")) {
+    state = "failed";
+    text.textContent = t(lang, read.code === "NO_SESSION" ? "viewNoSession" : "viewSignedOut");
+  } else if (account && !read) {
+    state = "refreshing";
+    text.textContent = t(lang, "viewLoading", { email: account.email });
+  } else if (account && !dash) {
+    state = "failed";
+    text.textContent = t(lang, "viewUnavailable");
   } else if (!dash?.readAt) {
     state = "none";
     text.textContent = t(lang, "liveNone");
-  } else if (dash.failedAt && dash.failedAt > dash.readAt) {
+  } else if (failedAt && failedAt > dash.readAt) {
     state = "failed";
     text.textContent = t(lang, "liveFailed", { time: formatClock(dash.readAt) });
   } else {
@@ -404,12 +567,7 @@ function render() {
   // from another build does not speak this popup's language.
   el("updateBanner").hidden = snap.build === BUILD;
 
-  const dash = todaysDashboard();
-  renderHero(dash);
-  renderTile("pc", dash);
-  renderTile("mobile", dash);
-  renderTasks();
-  renderLive();
+  renderDashboard();
   renderBot();
 }
 
@@ -434,12 +592,9 @@ function renderBotLine() {
   }
 
   const { status, schedule } = bot;
-  const run = status.run;
   if (status.state !== "idle") {
-    const account = run?.live?.currentAccount;
-    const parts = [account ? t(lang, "botRunning", { account }) : t(lang, "botRunningStart")];
-    if (run?.collected > 0) parts.push(t(lang, "botGained", { points: fmt(run.collected) }));
-    line.textContent = parts.join(" · ");
+    const account = status.run?.live?.currentAccount;
+    line.textContent = account ? t(lang, "botRunning", { account }) : t(lang, "botRunningStart");
     return;
   }
   if (!bot.accounts?.length) {
@@ -523,7 +678,7 @@ function renderBotLog() {
 
 function renderBot() {
   const state = botState();
-  if (snap) renderHero(todaysDashboard());
+  renderDashboard();
   el("bot").dataset.state = bot.phase;
   el("statePill").dataset.state = state;
   el("stateText").textContent = t(lang, PILL_KEYS[state] ?? "pillIdle");
@@ -573,6 +728,11 @@ async function pollBot() {
     }
     bot.status = status;
     bot.phase = "ready";
+    // The dashboard follows the account the bot moves to.
+    const running = status.state !== "idle" ? (status.run?.live?.currentAccount ?? null) : null;
+    Object.assign(viewing, nextView({ view: viewing.view, followed: viewing.followed, running }));
+    const account = viewedAccount();
+    if (account && !viewing.reads.has(account.email)) void loadView();
   } catch (error) {
     bot.phase = error?.code === "UNAUTHORIZED" ? "badToken" : "offline";
   }
@@ -621,8 +781,12 @@ function startLive() {
   const age = Date.now() - (snap.dashboard?.readAt ?? 0);
   if (age > FRESH_ENOUGH_MS) void refreshNow();
   scheduleLive();
-  void pollBot();
-  scheduleBot();
+  void (async () => {
+    await loadPrefs();
+    await pollBot();
+    scheduleBot();
+    scheduleView();
+  })();
 }
 
 // ------------------------------------------------------------------- events
@@ -636,13 +800,26 @@ port.onMessage.addListener((data) => {
 el("reloadBtn").addEventListener("click", () => chrome.runtime.reload());
 
 el("refreshBtn").addEventListener("click", () => {
+  if (viewedAccount()) {
+    void loadView({ silent: false });
+    scheduleView();
+    return;
+  }
   void refreshNow();
   scheduleLive();
 });
 
+el("viewSelect").addEventListener("change", (event) => {
+  viewing.view = event.target.value;
+  viewing.prefs = { ...viewing.prefs, pick: viewing.view };
+  void savePrefs();
+  renderDashboard();
+  void loadView();
+});
+
 el("tasksToggle").addEventListener("click", () => {
   tasksExpanded = !tasksExpanded;
-  renderTasks();
+  if (snap) renderTasks(shown());
 });
 
 el("themeBtn").addEventListener("click", async () => {
@@ -702,4 +879,5 @@ window.addEventListener("unload", () => {
   clearInterval(clock);
   clearTimeout(liveTimer);
   clearTimeout(botTimer);
+  clearTimeout(viewing.timer);
 });

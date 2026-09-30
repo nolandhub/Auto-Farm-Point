@@ -17,6 +17,8 @@ services:
             API_ALLOW_SCHEDULE_WRITE: 'true'
             API_ALLOW_ACCOUNT_WRITE: 'true'
             API_ALLOW_MANUAL_LOGIN: 'true'
+            # The dashboard can show any account, read with its saved session
+            API_ALLOW_ACCOUNT_VIEW: 'true'
             # Restarts the container when its DNS is stuck (it started before the
             # machine's network was up); restart: unless-stopped brings it back.
             API_DNS_WATCHDOG: 'true'

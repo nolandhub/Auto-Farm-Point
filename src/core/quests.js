@@ -136,11 +136,12 @@ async function fetchPage(url) {
 /**
  * { signedIn, quests }. signedIn is false when rewards.bing.com sends us to a
  * login page (it has its own sign-in, separate from bing.com's), null when the
- * page could not be read at all. Never throws.
+ * page could not be read at all. Never throws. `fetchPage` reads a page
+ * ({ ok, url, text }); another account's pages come through the bot's API.
  */
-export async function readQuests() {
+export async function readQuests({ fetchPage: read = fetchPage } = {}) {
   try {
-    const earn = await fetchPage(EARN_URL);
+    const earn = await read(EARN_URL);
     const landed = new URL(earn.url);
     if (!earn.ok || landed.host !== "rewards.bing.com" || !landed.pathname.startsWith("/earn")) {
       log.info("rewards.bing.com is not signed in, quests skipped");
@@ -150,7 +151,7 @@ export async function readQuests() {
     const quests = [];
     for (const id of parseQuestIds(earn.text).slice(0, MAX_QUESTS)) {
       try {
-        const page = await fetchPage(`${EARN_URL}/quest/${id}`);
+        const page = await read(`${EARN_URL}/quest/${id}`);
         const quest = page.ok ? parseQuestPage(page.text, id) : null;
         if (quest) quests.push(quest);
       } catch (error) {

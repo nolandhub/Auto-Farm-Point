@@ -1,3 +1,4 @@
+import { loadAccountView } from "./src/core/account-view.js";
 import { ALARMS } from "./src/core/constants.js";
 import { cleanupLegacy } from "./src/core/legacy.js";
 import { clear as clearLogs, flush, getText, load as loadLogs, log } from "./src/core/log.js";
@@ -50,6 +51,8 @@ const HANDLERS = {
     return { ok: true };
   },
   refreshBadge: () => refreshBadge(),
+  // The popup shows one of the bot's accounts: read it through the bot's API.
+  readAccountView: (message) => loadAccountView(message.payload ?? {}),
   // The manager opened a sign-in page: follow it now rather than at the next minute's check.
   watchManualLogin: () => {
     void checkManualLogin();

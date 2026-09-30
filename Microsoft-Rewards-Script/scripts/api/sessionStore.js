@@ -105,3 +105,27 @@ export function deleteStoredSessions(projectRoot, sessionPath, email) {
         closeDatabase(db)
     }
 }
+
+/** One account's saved browser session ({ storageState, fingerprint }), desktop first, or null. */
+export function loadStoredSession(projectRoot, sessionPath, email) {
+    const { dbPath, exists } = resolveSessionDb(projectRoot, sessionPath)
+    if (!exists) return null
+
+    const db = openDatabase(dbPath, true)
+    try {
+        const query = db.prepare(
+            'SELECT storage_state, fingerprint FROM sessions WHERE email = ? COLLATE NOCASE AND platform = ?'
+        )
+        for (const platform of ['desktop', 'mobile']) {
+            const row = query.get(email, platform)
+            if (!row?.storage_state) continue
+            return {
+                storageState: JSON.parse(row.storage_state),
+                fingerprint: row.fingerprint ? JSON.parse(row.fingerprint) : null
+            }
+        }
+        return null
+    } finally {
+        closeDatabase(db)
+    }
+}

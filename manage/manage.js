@@ -148,11 +148,8 @@ function renderRun() {
   if (phase !== "ready") {
     line.textContent = "";
   } else if (isRunning) {
-    const run = status.run;
-    const account = run?.live?.currentAccount;
-    const parts = [account ? t(lang, "botRunning", { account }) : t(lang, "botRunningStart")];
-    if (run?.collected > 0) parts.push(t(lang, "botGained", { points: fmt(run.collected) }));
-    line.textContent = parts.join(" · ");
+    const account = status.run?.live?.currentAccount;
+    line.textContent = account ? t(lang, "botRunning", { account }) : t(lang, "botRunningStart");
   } else if (lastRunFailed(status)) {
     line.dataset.tone = "error";
     const exit = status.lastExit;

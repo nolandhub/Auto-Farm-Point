@@ -195,6 +195,19 @@ test("manual-login calls use the right paths", async () => {
   assert.deepEqual(JSON.parse(calls[1].body), { email: "me@example.com" });
 });
 
+test("an account's Rewards pages are read by account number and page name", async () => {
+  const { fetchImpl, calls } = fakeFetch({
+    "GET /accounts/3/rewards": { body: { ok: true, status: 200, url: "https://rewards.bing.com/earn", body: "" } },
+  });
+  const api = netsky.createClient(connection, fetchImpl);
+  await api.accountRewards(3, "flyout");
+  await api.accountRewards("3", "quest", "ENWW_pcparent_FY27_BingMonthlyPC_Sep_punchcard");
+  assert.deepEqual(
+    calls.map((c) => c.path),
+    ["/accounts/3/rewards?page=flyout", "/accounts/3/rewards?page=quest&id=ENWW_pcparent_FY27_BingMonthlyPC_Sep_punchcard"]
+  );
+});
+
 test("the badge asks for attention while a manual sign-in is open", () => {
   assert.deepEqual(netsky.badgeFor({ reachable: true, state: "idle", manual: true }), { text: "!", color: "#b45309" });
 });

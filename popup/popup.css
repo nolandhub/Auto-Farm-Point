@@ -110,6 +110,23 @@ h1 { margin: 0; font-size: 14px; font-weight: 650; letter-spacing: -0.01em; whit
 
 .hero { padding: 14px 14px 8px; }
 
+/* Which account the dashboard shows; listed once the bot's accounts are known. */
+.view-row { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }
+.view-label { flex: none; font-size: 11.5px; font-weight: 600; color: var(--muted); }
+.view-select {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+}
+.view-select:focus-visible { outline: 2px solid var(--ring); outline-offset: 0; border-color: transparent; }
+
 .hero-main { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .hero-copy { min-width: 0; }
 
@@ -279,6 +296,10 @@ h2 .ic { width: 15px; height: 15px; color: var(--muted); }
 .task-link:hover { background: var(--surface-2); }
 .task-link:hover .task-title { text-decoration: underline; text-underline-offset: 2px; }
 .task-link[aria-busy="true"] { opacity: 0.6; cursor: progress; }
+/* Another account's task: shown, not opened, since Edge would collect it for its own account. */
+.task-link--static { cursor: default; }
+.task-link--static:hover { background: transparent; }
+.task-link--static:hover .task-title { text-decoration: none; }
 .task-open { flex: none; width: 13px; height: 13px; color: var(--muted); opacity: 0.6; transition: opacity var(--dur-fast); }
 .task-link:hover .task-open,
 .task-link:focus-visible .task-open { opacity: 1; }

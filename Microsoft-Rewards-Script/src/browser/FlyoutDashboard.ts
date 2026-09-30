@@ -138,10 +138,10 @@ export function mapFlyoutToDashboard(data: RewardsFlyoutData): DashboardData {
             lifetimeGivingPoints: numberOrFallback(flyoutStatus.lifetimeGivingPoints, userInfo.lifetimeGivingPoints),
             isRewardsUser: true,
             counters: {
-                pcSearch: counters.PCSearch ?? counters.pcSearch ?? [],
-                mobileSearch: counters.MobileSearch ?? counters.mobileSearch ?? [],
-                activityAndQuiz: counters.ActivityAndQuiz ?? counters.activityAndQuiz ?? [],
-                dailyPoint: counters.DailyPoint ?? counters.dailyPoint ?? []
+                pcSearch: uniqueCounters(counters.PCSearch ?? counters.pcSearch),
+                mobileSearch: uniqueCounters(counters.MobileSearch ?? counters.mobileSearch),
+                activityAndQuiz: uniqueCounters(counters.ActivityAndQuiz ?? counters.activityAndQuiz),
+                dailyPoint: uniqueCounters(counters.DailyPoint ?? counters.dailyPoint)
             }
         },
         userWarnings: botDetection.likelyLimited ? [{ name: BOT_SCORE_WARNING }] : [],
@@ -172,6 +172,17 @@ function numberOrFallback(primary: unknown, fallback: unknown): number {
 
     const fallbackNumber = Number(fallback)
     return Number.isFinite(fallbackNumber) ? fallbackNumber : 0
+}
+
+// The flyout lists each search counter twice; summing both doubled every quota and every search's points
+function uniqueCounters<T extends { offerId?: string }>(counters: T[] = []): T[] {
+    const seen = new Set<string>()
+    return counters.filter(counter => {
+        if (!counter?.offerId) return true
+        if (seen.has(counter.offerId)) return false
+        seen.add(counter.offerId)
+        return true
+    })
 }
 
 function uniquePromotions(promotions: BasePromotion[]): BasePromotion[] {
