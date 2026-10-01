@@ -110,6 +110,8 @@ h2 .ic { width: 17px; height: 17px; color: var(--muted); }
   border-top: 1px solid var(--border);
 }
 .account:first-child { border-top: 0; }
+/* With the order controls: handle, position, the account, its buttons. */
+.account:has(.drag-handle) { grid-template-columns: auto auto minmax(0, 1fr) auto; column-gap: 10px; }
 .account-main { display: grid; gap: 2px; min-width: 0; }
 .account-email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 650; }
 .account-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); }
@@ -118,6 +120,61 @@ h2 .ic { width: 17px; height: 17px; color: var(--muted); }
 .account-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
 .account-actions button { min-height: 32px; padding: 0 10px; font-size: 12px; }
 .account[data-current="true"] .account-email { color: var(--primary); }
+
+/* Farming order: drag the handle, pick a number, or use the arrow keys on the handle. */
+.order-hint { margin: 0 0 2px; font-size: 12px; color: var(--muted); }
+.drag-handle {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: grab;
+  touch-action: none; /* a touch drag moves the row, not the page */
+}
+.drag-handle:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
+.drag-handle:focus-visible { outline: 2px solid var(--ring); outline-offset: 0; }
+.drag-handle:disabled { cursor: not-allowed; opacity: 0.4; }
+.order-select {
+  width: 52px;
+  min-height: 32px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.order-select:focus-visible { outline: 2px solid var(--ring); outline-offset: 0; border-color: transparent; }
+.order-select:disabled { opacity: 0.5; cursor: not-allowed; }
+.accounts.is-sorting .account { transition: transform var(--dur-fast) ease-out; }
+.accounts .account.is-dragging {
+  position: relative;
+  z-index: 1;
+  transition: none;
+  border-radius: var(--radius-sm);
+  /* Lifted off the card: its own fill, an edge and a shadow that shows on dark too. */
+  margin-inline: -8px; /* the fill reaches past the text, which stays where it was */
+  padding-inline: 8px;
+  background: var(--surface-2);
+  outline: 1px solid var(--border);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.28);
+}
+body.is-dragging { cursor: grabbing; user-select: none; }
+body.is-dragging .drag-handle { cursor: grabbing; }
+@media (prefers-reduced-motion: reduce) {
+  .accounts.is-sorting .account { transition: none; }
+}
+@media (max-width: 560px) {
+  .account:has(.drag-handle) { grid-template-columns: auto auto minmax(0, 1fr); }
+  .account:has(.drag-handle) .account-actions { grid-column: 1 / -1; justify-content: flex-start; }
+}
 
 /* -------------------------------------------------------------------- jobs */
 

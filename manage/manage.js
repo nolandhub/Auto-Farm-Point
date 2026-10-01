@@ -1,3 +1,4 @@
+import { dropIndex, moveTo } from "../src/core/account-order.js";
 import { STORAGE_KEYS } from "../src/core/constants.js";
 import { resolveLang, t } from "../src/core/i18n.js";
 import { openManualLogin } from "../src/core/manual-login.js";
@@ -22,6 +23,9 @@ const POLL_MS = 2_000;
 /** Accounts, sessions, schedule, config and history: this often, and after every change. */
 const SLOW_MS = 10_000;
 const LOG_KEEP = 400;
+/** A press on the drag handle becomes a drag once the pointer has moved this far. */
+const DRAG_THRESHOLD_PX = 4;
+const SVG_NS = "http://www.w3.org/2000/svg";
 const DEFAULT_RUN_TIME = { hour: 7, minute: 0 };
 
 /** The config switches offered, as [section, key]; labels are `job_<key>`. */
@@ -58,6 +62,12 @@ let logs = [];
 let lastLogId = 0;
 let slowAt = 0;
 let editing = null;
+/** A drag of an account row in progress; see onHandleDown. */
+let sorting = null;
+/** A new farming order is being saved; the list shows it already. */
+let savingOrder = false;
+/** What the account list was last built from: it is rebuilt only when this changes. */
+let accountsKey = "";
 
 // ------------------------------------------------------------------ helpers
 
@@ -85,6 +95,16 @@ function setStatus(id, text, tone = "") {
 
 const failure = (error) => t(lang, "actionFailed", { message: error?.message ?? String(error) });
 const running = () => phase === "ready" && status?.state !== "idle";
+
+function icon(id) {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("class", "ic");
+  svg.setAttribute("aria-hidden", "true");
+  const use = document.createElementNS(SVG_NS, "use");
+  use.setAttribute("href", id);
+  svg.append(use);
+  return svg;
+}
 
 function button(label, className, onClick) {
   const node = document.createElement("button");
@@ -189,9 +209,21 @@ function sessionText(email) {
   return { text: t(lang, "sessionSaved", { time: formatWhen(Math.max(...times)) }), tone: "ok" };
 }
 
-function renderAccounts() {
+function renderAccounts({ force = false } = {}) {
+  // Not under a drag, and only on a change: a rebuild every poll would drop the drag and the focus.
+  if (sorting) return;
+  const current = running() ? status?.run?.live?.currentAccount : null;
+  const busy = running();
+  const key = JSON.stringify([phase, lang, accounts, sessions, current, busy, savingOrder]);
+  if (!force && key === accountsKey) return;
+  accountsKey = key;
+
   const list = el("accountList");
   list.textContent = "";
+  const hint = el("orderHint");
+  hint.hidden = phase !== "ready" || accounts.length < 2;
+  hint.textContent = t(lang, busy ? "orderHintBusy" : "orderHint");
+  list.setAttribute("aria-busy", String(savingOrder));
   if (phase !== "ready") return;
   if (!accounts.length) {
     const empty = document.createElement("li");
@@ -201,12 +233,12 @@ function renderAccounts() {
     return;
   }
 
-  const current = running() ? status?.run?.live?.currentAccount : null;
-  const busy = running();
-  for (const account of accounts) {
+  accounts.forEach((account, index) => {
     const item = document.createElement("li");
     item.className = "account";
     item.dataset.current = String(account.email === current);
+    item.dataset.email = account.email;
+    if (accounts.length > 1) item.append(...orderControls(account, index, busy));
 
     const main = document.createElement("div");
     main.className = "account-main";
@@ -245,13 +277,155 @@ function renderAccounts() {
     const reset = button(t(lang, "resetSession"), "secondary", () => resetSession(account));
     const signIn = button(t(lang, "manualLogin"), "secondary", () => signInByHand(account));
     const remove = button(t(lang, "remove"), "danger-btn", () => removeAccount(account));
-    for (const node of [run, edit, reset, signIn, remove]) node.disabled = busy;
+    for (const node of [run, edit, reset, signIn, remove]) node.disabled = busy || savingOrder;
     actions.append(run, edit, reset, signIn, remove);
 
     item.append(main, actions);
     list.append(item);
+  });
+}
+
+// ------------------------------------------------------------- farming order
+
+/**
+ * The handle and the position picker in front of an account. The bot farms
+ * top to bottom; dragging is one way to change that, and WCAG 2.2 wants a
+ * single-pointer one too: the picker (choose 1 to put it first), and the
+ * arrow, Home and End keys on the handle.
+ */
+function orderControls(account, index, busy) {
+  const label = t(lang, "orderHandle", { email: account.email });
+  const handle = document.createElement("button");
+  handle.type = "button";
+  handle.className = "drag-handle";
+  handle.disabled = busy;
+  handle.title = label;
+  handle.setAttribute("aria-label", label);
+  handle.setAttribute("aria-describedby", "orderHint");
+  handle.append(icon("#i-grip"));
+  handle.addEventListener("pointerdown", (event) => onHandleDown(event, index));
+  handle.addEventListener("pointermove", onHandleMove);
+  handle.addEventListener("pointerup", () => endSort());
+  handle.addEventListener("pointercancel", () => endSort({ cancel: true }));
+  handle.addEventListener("keydown", (event) => onHandleKey(event, index));
+
+  const select = document.createElement("select");
+  select.className = "order-select";
+  select.disabled = busy;
+  select.setAttribute("aria-label", t(lang, "orderSelect", { email: account.email }));
+  for (let position = 1; position <= accounts.length; position++) {
+    const option = document.createElement("option");
+    option.value = String(position);
+    option.textContent = String(position);
+    select.append(option);
+  }
+  select.value = String(index + 1);
+  select.addEventListener("change", () => void reorder(index, Number(select.value) - 1, { focus: ".order-select" }));
+  return [handle, select];
+}
+
+function onHandleDown(event, index) {
+  if (event.button !== 0 || savingOrder || running()) return;
+  event.currentTarget.setPointerCapture(event.pointerId);
+  sorting = { index, pointerId: event.pointerId, startY: event.clientY, started: false };
+}
+
+function onHandleMove(event) {
+  if (!sorting || event.pointerId !== sorting.pointerId) return;
+  let dy = event.clientY - sorting.startY;
+  if (!sorting.started) {
+    if (Math.abs(dy) < DRAG_THRESHOLD_PX) return;
+    // Where the rows are before anything moves, and the gap the dragged row leaves.
+    const rows = [...el("accountList").children];
+    const boxes = rows.map((row) => row.getBoundingClientRect());
+    const own = boxes[sorting.index];
+    Object.assign(sorting, {
+      started: true,
+      rows,
+      boxes: boxes.map(({ top, bottom }) => ({ top, bottom })),
+      gap: own.height,
+      target: sorting.index,
+      // The row stays within the list: no higher than the first row, no lower than the last.
+      minDy: boxes[0].top - own.top,
+      maxDy: boxes[boxes.length - 1].bottom - own.bottom,
+    });
+    el("accountList").classList.add("is-sorting");
+    rows[sorting.index].classList.add("is-dragging");
+    document.body.classList.add("is-dragging");
+  }
+  const { rows, index, boxes, gap, minDy, maxDy } = sorting;
+  dy = Math.max(minDy, Math.min(maxDy, dy));
+  const target = dropIndex(boxes, index, dy);
+  sorting.target = target;
+  // The dragged row follows the pointer; the rows it passes slide over to make room.
+  rows.forEach((row, at) => {
+    let offset = 0;
+    if (at === index) offset = dy;
+    else if (index < target && at > index && at <= target) offset = -gap;
+    else if (index > target && at >= target && at < index) offset = gap;
+    row.style.transform = offset ? `translateY(${offset}px)` : "";
+  });
+}
+
+function endSort({ cancel = false } = {}) {
+  const drag = sorting;
+  sorting = null;
+  if (!drag?.started) return;
+  for (const row of drag.rows) row.style.transform = "";
+  el("accountList").classList.remove("is-sorting");
+  drag.rows[drag.index].classList.remove("is-dragging");
+  document.body.classList.remove("is-dragging");
+  if (!cancel && drag.target !== drag.index) void reorder(drag.index, drag.target);
+  else renderAccounts({ force: true });
+}
+
+function onHandleKey(event, index) {
+  const to = { ArrowUp: index - 1, ArrowDown: index + 1, Home: 0, End: accounts.length - 1 }[event.key];
+  if (to === undefined) return;
+  event.preventDefault();
+  void reorder(index, to, { focus: ".drag-handle" });
+}
+
+/** Keyboard users keep their place: the control they used, on the account they moved. */
+function focusControl(email, selector) {
+  const row = [...el("accountList").children].find((item) => item.dataset.email === email);
+  row?.querySelector(selector)?.focus();
+}
+
+/** Shows the new order at once and saves it; a refused save puts the old order back. */
+async function reorder(from, target, { focus = null } = {}) {
+  const to = Math.max(0, Math.min(target, accounts.length - 1));
+  if (to === from || savingOrder || !api) return;
+  const before = accounts;
+  const { email } = accounts[from];
+  accounts = moveTo(accounts, from, to);
+  savingOrder = true;
+  renderAccounts({ force: true });
+  if (focus) focusControl(email, focus);
+  try {
+    await api.reorderAccounts(accounts.map((account) => account.email));
+    setStatus("accStatus", t(lang, "orderSaved", { email, position: to + 1, total: accounts.length }), "ok");
+  } catch (error) {
+    accounts = before;
+    const message =
+      error?.code === "RUN_ACTIVE"
+        ? t(lang, "busyRunning")
+        : error?.code === "ACCOUNTS_CHANGED"
+          ? t(lang, "orderStale")
+          : failure(error);
+    setStatus("accStatus", message, "error");
+  } finally {
+    savingOrder = false;
+    // The numbers behind every account changed: read them again before anything acts on one.
+    await poll({ slow: true });
+    if (focus) focusControl(email, focus);
   }
 }
+
+// A drag is called off with Escape.
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && sorting?.started) endSort({ cancel: true });
+});
 
 function renderSchedule() {
   const on = el("schedOn");
@@ -382,7 +556,8 @@ async function readSlow() {
     api.config().catch(() => ({ config: null })),
     api.history(),
   ]);
-  accounts = acc.accounts ?? [];
+  // A save in flight shows its order already; the old one must not flash back.
+  if (!savingOrder) accounts = acc.accounts ?? [];
   sessions = sess.sessions ?? [];
   schedule = sched;
   config = conf.config;

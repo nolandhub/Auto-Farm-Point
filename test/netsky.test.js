@@ -208,6 +208,14 @@ test("an account's Rewards pages are read by account number and page name", asyn
   );
 });
 
+test("the farming order is saved as the list of emails", async () => {
+  const { fetchImpl, calls } = fakeFetch({ "PUT /accounts/order": { body: { reordered: true, order: [] } } });
+  const api = netsky.createClient(connection, fetchImpl);
+  await api.reorderAccounts(["b@x.com", "a@x.com"]);
+  assert.equal(`${calls[0].method} ${calls[0].path}`, "PUT /accounts/order");
+  assert.deepEqual(JSON.parse(calls[0].body), { emails: ["b@x.com", "a@x.com"] });
+});
+
 test("the badge asks for attention while a manual sign-in is open", () => {
   assert.deepEqual(netsky.badgeFor({ reachable: true, state: "idle", manual: true }), { text: "!", color: "#b45309" });
 });

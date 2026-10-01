@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 
-import { addAccount, readAccountFields, removeAccount, updateAccount } from './accountStore.js'
+import { addAccount, readAccountFields, removeAccount, reorderAccounts, updateAccount } from './accountStore.js'
 import { loadEnvFile } from './lib.js'
 
 function tempEnv(content = '') {
@@ -127,4 +127,100 @@ test('bodies are checked field by field', () => {
     assert.throws(() => readAccountFields({ email: 'a@b.c', admin: 'yes' }, { requireEmail: true }), /Unknown field/)
     assert.throws(() => readAccountFields({ email: 'a@b.c', geoLocale: 'Vietnam' }, { requireEmail: true }), /country/)
     assert.deepEqual(readAccountFields({ totpSecret: '' }, { requireEmail: false }), { totpSecret: '' })
+})
+
+const THREE = [
+    '# Accounts, managed from the Bing Auto Search manager page.',
+    'API_TOKEN="abc"',
+    '',
+    '# Account 1',
+    'ACCOUNT_1_EMAIL="a@example.com"',
+    `ACCOUNT_1_PASSWORD="p"a'ss w#rd$HOME"`,
+    '',
+    '# Account 2',
+    'ACCOUNT_2_EMAIL="b@example.com"',
+    'ACCOUNT_2_TOTP_SECRET="JBSWY3DPEHPK3PXP"',
+    '',
+    '# Account 3',
+    'ACCOUNT_3_EMAIL="c@example.com"',
+    'ACCOUNT_3_GEO_LOCALE="VN"',
+    ''
+].join('\n')
+
+test('reordering renumbers the account blocks and keeps every value as written', () => {
+    const { dir, file } = tempEnv(THREE)
+    const env = reread(dir)
+
+    const order = reorderAccounts(file, ['c@example.com', 'a@example.com', 'b@example.com'], env)
+
+    assert.deepEqual(order, [
+        { index: 1, email: 'c@example.com' },
+        { index: 2, email: 'a@example.com' },
+        { index: 3, email: 'b@example.com' }
+    ])
+    const after = reread(dir)
+    assert.equal(after.ACCOUNT_1_EMAIL, 'c@example.com')
+    assert.equal(after.ACCOUNT_1_GEO_LOCALE, 'VN')
+    assert.equal(after.ACCOUNT_2_EMAIL, 'a@example.com')
+    assert.equal(after.ACCOUNT_2_PASSWORD, `p"a'ss w#rd$HOME`)
+    assert.equal(after.ACCOUNT_3_EMAIL, 'b@example.com')
+    assert.equal(after.ACCOUNT_3_TOTP_SECRET, 'JBSWY3DPEHPK3PXP')
+    assert.equal(after.ACCOUNT_3_GEO_LOCALE, undefined)
+    assert.equal(after.API_TOKEN, 'abc')
+
+    const text = fs.readFileSync(file, 'utf8')
+    assert.ok(text.startsWith('# Accounts, managed from the Bing Auto Search manager page.\nAPI_TOKEN="abc"\n'))
+    assert.ok(text.indexOf('# Account 1\nACCOUNT_1_EMAIL="c@example.com"') !== -1)
+    assert.equal(text.match(/# Account \d/g).length, 3)
+
+    // The live env matches the file, with no field left at an old number.
+    const accountKeys = source =>
+        Object.fromEntries(Object.entries(source).filter(([key]) => key.startsWith('ACCOUNT_')))
+    assert.deepEqual(accountKeys(env), accountKeys(after))
+})
+
+test('a list that does not match the configured accounts is refused and nothing changes', () => {
+    for (const emails of [
+        ['a@example.com', 'b@example.com'],
+        ['a@example.com', 'b@example.com', 'c@example.com', 'd@example.com'],
+        ['a@example.com', 'a@example.com', 'b@example.com'],
+        ['a@example.com', 'b@example.com', 'x@example.com']
+    ]) {
+        const { dir, file } = tempEnv(THREE)
+        const env = reread(dir)
+        assert.throws(() => reorderAccounts(file, emails, env), { code: 'ACCOUNTS_CHANGED', status: 409 })
+        assert.equal(fs.readFileSync(file, 'utf8'), THREE)
+        assert.equal(env.ACCOUNT_1_EMAIL, 'a@example.com')
+    }
+})
+
+test('emails in the new order match whatever their case', () => {
+    const { dir, file } = tempEnv(THREE)
+    reorderAccounts(file, ['B@Example.com', 'c@example.com', 'A@example.com'], reread(dir))
+    assert.equal(reread(dir).ACCOUNT_1_EMAIL, 'b@example.com')
+})
+
+test('a new order must be a list of emails', () => {
+    const { dir, file } = tempEnv(THREE)
+    for (const emails of [undefined, 'a@example.com', [1, 2, 3]]) {
+        assert.throws(() => reorderAccounts(file, emails, reread(dir)), { code: 'BAD_REQUEST', status: 400 })
+    }
+})
+
+test('fields left without an email move after the accounts, never into one', () => {
+    const { dir, file } = tempEnv(THREE + 'ACCOUNT_9_PASSWORD="orphan"\n')
+    reorderAccounts(file, ['c@example.com', 'b@example.com', 'a@example.com'], reread(dir))
+    const after = reread(dir)
+    assert.equal(after.ACCOUNT_1_PASSWORD, undefined)
+    assert.equal(after.ACCOUNT_3_PASSWORD, `p"a'ss w#rd$HOME`)
+    assert.equal(after.ACCOUNT_4_PASSWORD, 'orphan')
+})
+
+test('reordering and putting the order back leaves the file exactly as it was', () => {
+    const { dir, file } = tempEnv(THREE)
+    const env = reread(dir)
+    reorderAccounts(file, ['c@example.com', 'a@example.com', 'b@example.com'], env)
+    reorderAccounts(file, ['b@example.com', 'c@example.com', 'a@example.com'], env)
+    reorderAccounts(file, ['a@example.com', 'b@example.com', 'c@example.com'], env)
+    assert.equal(fs.readFileSync(file, 'utf8'), THREE)
 })

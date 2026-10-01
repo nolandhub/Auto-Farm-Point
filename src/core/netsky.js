@@ -109,6 +109,8 @@ export function createClient({ url, token }, fetchImpl = (...args) => globalThis
     addAccount: (fields) => call("POST", "/accounts", fields),
     updateAccount: (index, fields) => call("PATCH", `/accounts/${Number(index)}`, fields),
     removeAccount: (index) => call("DELETE", `/accounts/${Number(index)}`),
+    // The farming order: the accounts' emails, first to run first.
+    reorderAccounts: (emails) => call("PUT", "/accounts/order", { emails }),
     deleteSession: (email) => call("DELETE", `/sessions/${encodeURIComponent(email)}`),
     patchConfig: (partial) => call("PATCH", "/config", partial),
     patchSchedule: (fields) => call("PATCH", "/schedule", fields),

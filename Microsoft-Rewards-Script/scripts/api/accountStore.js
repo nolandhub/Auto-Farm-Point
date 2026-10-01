@@ -50,7 +50,8 @@ export function readAccountFields(body, { requireEmail }) {
         throw fail('Body must be a JSON object.', 'BAD_REQUEST')
     }
     const unknown = Object.keys(body).filter(key => !(key in FIELDS))
-    if (unknown.length) throw fail(`Unknown field${unknown.length === 1 ? '' : 's'}: ${unknown.join(', ')}`, 'BAD_REQUEST')
+    if (unknown.length)
+        throw fail(`Unknown field${unknown.length === 1 ? '' : 's'}: ${unknown.join(', ')}`, 'BAD_REQUEST')
 
     const fields = {}
     for (const [name, raw] of Object.entries(body)) {
@@ -176,4 +177,52 @@ export function removeAccount(file, index, env = process.env) {
     for (const key of Object.keys(env)) if (key.startsWith(prefix)) delete env[key]
     writeLines(file, lines)
     return email
+}
+
+/**
+ * Renumbers the accounts so the bot, which runs them by number, runs them in
+ * the order of `emails`. Each line moves to its new number exactly as written;
+ * fields that have no email move after the accounts, so they never join one.
+ * Returns the new order as [{ index, email }].
+ */
+export function reorderAccounts(file, emails, env = process.env) {
+    if (!Array.isArray(emails) || !emails.every(email => typeof email === 'string')) {
+        throw fail('`emails` must be a list of the account emails in their new order.', 'BAD_REQUEST')
+    }
+    const lines = readLines(file)
+    const indexes = [...accountIndexes(lines, env)].sort((a, b) => a - b)
+    const byEmail = new Map(indexes.filter(i => emailAt(i, env)).map(i => [emailAt(i, env).toLowerCase(), i]))
+    const wanted = emails.map(email => email.trim().toLowerCase())
+    if (
+        wanted.length !== byEmail.size ||
+        new Set(wanted).size !== wanted.length ||
+        !wanted.every(e => byEmail.has(e))
+    ) {
+        throw fail('The accounts have changed since this list was read. Reload and try again.', 'ACCOUNTS_CHANGED', 409)
+    }
+
+    const ordered = wanted.map(email => byEmail.get(email))
+    const orphans = indexes.filter(i => !ordered.includes(i))
+    const renumber = new Map([...ordered, ...orphans].map((old, at) => [old, at + 1]))
+    const oldIndex = key => Number(ACCOUNT_KEY.exec(key ?? '')?.[1] ?? 0)
+
+    // What is not an account stays; the blank lines that parted the old blocks fold into one.
+    const kept = lines
+        .filter(line => !oldIndex(keyOf(line)) && !/^# Account \d+$/.test(line.trim()))
+        .filter((line, at, rest) => line.trim() !== '' || (at > 0 && rest[at - 1].trim() !== ''))
+    for (const [old, index] of renumber) {
+        const block = lines.filter(line => oldIndex(keyOf(line)) === old)
+        if (!block.length) continue
+        if (kept.length && kept[kept.length - 1].trim() !== '') kept.push('')
+        if (index <= ordered.length) kept.push(`# Account ${index}`)
+        for (const line of block) kept.push(line.replace(`ACCOUNT_${old}_`, `ACCOUNT_${index}_`))
+    }
+
+    const moved = Object.entries(env).filter(([key]) => oldIndex(key))
+    for (const [key] of moved) delete env[key]
+    for (const [key, value] of moved)
+        env[key.replace(`ACCOUNT_${oldIndex(key)}_`, `ACCOUNT_${renumber.get(oldIndex(key))}_`)] = value
+
+    writeLines(file, kept)
+    return ordered.map((old, at) => ({ index: at + 1, email: emailAt(at + 1, env) }))
 }

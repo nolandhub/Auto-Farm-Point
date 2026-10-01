@@ -15,7 +15,7 @@ import {
     syncMissingDefaults
 } from './configEditor.js'
 import { readSchedule, writeSchedule } from './scheduleStore.js'
-import { addAccount, readAccountFields, removeAccount, updateAccount } from './accountStore.js'
+import { addAccount, readAccountFields, removeAccount, reorderAccounts, updateAccount } from './accountStore.js'
 import { deleteStoredSessions, listStoredSessions, loadStoredSession } from './sessionStore.js'
 import { ManualLoginManager } from './manualLoginManager.js'
 import { DnsWatchdog } from './dnsWatchdog.js'
@@ -374,6 +374,7 @@ const requestHandler = async (req, res) => {
                     'POST /config/sync',
                     'GET /schedule',
                     'GET|POST|DELETE /manual-login',
+                    'PUT /accounts/order',
                     'GET /accounts/:n/rewards?page=flyout|earn|quest&id=',
                     'POST /start',
                     'POST /stop',
@@ -446,9 +447,10 @@ const requestHandler = async (req, res) => {
             return sendJson(res, 200, { accounts, count: accounts.length })
         }
 
-        // account add/edit/remove, written to the .env file
+        // account add/edit/remove/reorder, written to the .env file
         if (
             (method === 'POST' && pathname === '/accounts') ||
+            (method === 'PUT' && pathname === '/accounts/order') ||
             ((method === 'PATCH' || method === 'DELETE') && /^\/accounts\/\d+$/.test(pathname))
         ) {
             if (!ALLOW_ACCOUNT_WRITE) {
@@ -470,6 +472,12 @@ const requestHandler = async (req, res) => {
                     pm.note('info', `Added ACCOUNT_${index} (${fields.email}) via API.`)
                     const { emailKey, ...account } = loadAccounts().find(a => Number(a.index) === index) ?? {}
                     return sendJson(res, 201, { added: true, index, account: emailKey ? account : null })
+                }
+                if (method === 'PUT') {
+                    // The bot runs accounts by number: renumbering them is the farming order
+                    const order = reorderAccounts(ENV_FILE, (await readJsonObject(req)).emails)
+                    pm.note('info', `Reordered accounts via API: ${order.map(a => a.email).join(', ')}.`)
+                    return sendJson(res, 200, { reordered: true, order })
                 }
                 const index = Number(pathname.slice('/accounts/'.length))
                 if (method === 'PATCH') {
