@@ -1,5 +1,6 @@
 {
   "manifest_version": 3,
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAi5TPWYMFLwzka4C1o9rTdhs1Sb+k5lZcUP5HMQZVqCuzh+E8RjcQBMwLP8KK3Wgf3R+bQwhVphF0p1cxhzEVF7QB4nXZ9IYXLPbgZP0E5xwcBGtPndvdQOVDjIsh1unD5NKIiNzBXW6mgvTs6MixNAcdSu5ae9AC18LA1mZHEPZWOmFn+V14nMf7FKGwPbt0fsuu/Hfz1//gFkKbISa2qemcYqRmEEWof6tH3eSqbB8mvMTfFNQ54uZ1mnY37wNYOLHtrITvlWR75uzBPp3dULpRdCua//PP9K1MaL9up4UY012Pio6lbkvQWGLIpLY1xViKhUBepJOO0Jzlr2/aQwIDAQAB",
   "name": "Bing Auto Search",
   "version": "4.0.0",
   "description": "Shows your Microsoft Rewards points and tasks, and controls the Microsoft Rewards Script bot running on this machine.",

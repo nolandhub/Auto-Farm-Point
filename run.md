@@ -1,133 +1,99 @@
-# Cài đặt Bing Auto Search
+# Bing Auto Search Setup
 
-Công cụ tự kiếm điểm **Microsoft Rewards** mỗi ngày cho bạn. Nó gồm hai phần:
+Earns **Microsoft Rewards** points for you every day. It has two parts:
 
-- **Bot**: chạy ngầm trong Docker trên máy bạn, tự đăng nhập và làm nhiệm vụ.
-- **Extension**: nằm trong Edge, dùng để thêm tài khoản, bấm chạy và xem điểm.
+- **Bot**: runs in the background in Docker, signs in and completes tasks.
+- **Extension** (Edge): add accounts, start runs, see points.
 
-Làm lần lượt 5 bước dưới đây, mất khoảng 20 phút. Chỉ cần làm một lần.
+One-time setup, about 20 minutes.
 
----
-
-## Cần chuẩn bị
-
-| | Windows / macOS | Linux |
-|---|---|---|
-| **Docker** | Cài [Docker Desktop](https://www.docker.com/products/docker-desktop/) và **mở nó lên** | Cài [Docker Engine](https://docs.docker.com/engine/install/) |
-| **Git** | Windows: cài [Git for Windows](https://git-scm.com/download/win), dùng kèm **Git Bash** | Thường có sẵn |
-| **Trình duyệt** | Microsoft Edge (hoặc Chrome) | Microsoft Edge (hoặc Chrome) |
-
-Máy cần trống khoảng **6 GB** ổ cứng.
+> ⚠️ Automating Microsoft Rewards **violates Microsoft's terms**. Accounts may have points limited or be banned.
 
 ---
 
-## Bước 1: Tải project
+## Requirements
 
-Mở **Git Bash** (Windows) hoặc **Terminal** (macOS/Linux), rồi chạy:
+- **Docker**: on Windows/macOS install [Docker Desktop](https://www.docker.com/products/docker-desktop/) and **open it**. On Linux install [Docker Engine](https://docs.docker.com/engine/install/).
+- **Git**: on Windows install [Git for Windows](https://git-scm.com/download/win) and use **Git Bash** for every command below. Usually preinstalled on macOS/Linux.
+- **Microsoft Edge** (or Chrome), and about **6 GB** of free disk space.
+
+---
+
+## 1. Download and install the bot
+
+Open **Git Bash** (Windows) or **Terminal** (macOS/Linux) and run:
 
 ```bash
 git clone https://github.com/nolandhub/Auto-Farm-Point.git
 cd Auto-Farm-Point
-```
-
-Nếu bạn được gửi file ZIP thì giải nén ra. Mở Git Bash/Terminal **ngay trong thư mục vừa giải nén**, là thư mục có file `manifest.json`.
-
-## Bước 2: Cài bot
-
-Trong thư mục project, chạy:
-
-```bash
 bash netsky/setup.sh
 ```
 
-Lần đầu mất khoảng **5–15 phút**. Chạy xong, màn hình hiện:
+The first run takes 5–15 minutes. When done it prints the token (also copied to your clipboard), opens `edge://extensions`, and shows the next steps:
 
 ```
-Xong. Bot đang chạy ở http://127.0.0.1:3010
-Token API (dán vào popup của extension):
+Done. The bot is running at http://127.0.0.1:3010
+Token (copied to clipboard):
 
     3f9c...e21a
+
+Next, in Microsoft Edge:
+  1. Open edge://extensions and turn on Developer mode
+  2. Load unpacked -> choose: /path/to/Auto-Farm-Point
+  ...
 ```
 
-**Chép lại dãy token đó** để dùng ở bước 3.
+## 2. Install the extension
 
-## Bước 3: Cài extension
+1. Open `edge://extensions` and turn on **Developer mode**.
+2. Click **Load unpacked** and choose the folder the script printed (`Auto-Farm-Point`).
+3. Pin the **Bing Auto Search** icon to the toolbar.
+4. Click the icon, paste the token, then click **Kết nối** (Connect).
 
-1. Mở `edge://extensions` (Chrome: `chrome://extensions`).
-2. Bật **Chế độ dành cho nhà phát triển** (Developer mode).
-3. Bấm **Tải tiện ích đã giải nén** (Load unpacked), rồi chọn **thư mục project**, tức thư mục có file `manifest.json`.
-4. Ghim icon **Bing Auto Search** lên thanh công cụ.
-5. Bấm icon, dán token vào ô **Token API**, rồi bấm **Kết nối**.
+## 3. Add accounts
 
-## Bước 4: Thêm tài khoản
+In the popup: **Quản lý bot** (Manage bot) → **Thêm tài khoản** (Add account).
 
-Trong popup, bấm **Quản lý bot**, rồi bấm **Thêm tài khoản**:
+- **Email / Password**: your Microsoft account (leave the password empty if the account has none).
+- **2FA (TOTP)**: only if the account uses an authenticator app.
+- **Country**: `VN` or `auto`.
+- **Language**: **must be `en`**. With `vi` the bot skips searches.
 
-| Ô | Điền |
+No manual sign-in needed: the bot signs in on the first run and remembers it.
+
+## 4. Run
+
+Click **Bắt đầu farm** (Start farming). Each run takes 10–30 minutes.
+
+After that the bot **runs automatically at 07:00 every day**, even with Edge closed, as long as the computer is on and Docker is running. Change the time under **Lịch chạy** (Schedule) on the manage page.
+
+> Windows/macOS: in Docker Desktop settings, turn on **Start Docker Desktop when you sign in**.
+
+---
+
+## When the bot needs you
+
+- **Popup shows an orange number**: open **Microsoft Authenticator** on your phone and pick that number.
+- **A tab opens with a browser inside it**: click **Send code** **once**, then paste the code from your email. The tab closes by itself and the bot continues. (This tab only opens while Edge is open.)
+
+## Troubleshooting
+
+| Problem | Fix |
 |---|---|
-| Email | Email tài khoản Microsoft Rewards |
-| Mật khẩu | Mật khẩu tài khoản. Để trống nếu tài khoản không có mật khẩu. |
-| Mã bí mật 2FA (TOTP) | Chỉ điền nếu tài khoản có bật ứng dụng xác thực |
-| Quốc gia | `VN` hoặc `auto` |
-| Ngôn ngữ | **`en`**. Bắt buộc: nếu để `vi`, bot sẽ bỏ qua phần tìm kiếm. |
+| `Docker is not running` / popup says the bot isn't running | Open Docker Desktop, wait for *running*, rerun `bash netsky/setup.sh` |
+| `this user can't use Docker` (Linux) | `sudo usermod -aG docker $USER`, log out and back in, rerun setup |
+| `$'\r': command not found` (Windows) | Re-download with `git clone`; don't copy files through Explorer |
+| `port is already allocated` | Close whatever uses port 3010 or 6080, rerun setup |
+| Popup says the token is wrong | Rerun `bash netsky/setup.sh` to print the token again |
+| Moved the project folder | Rerun setup, remove the extension and **Load unpacked** from the new folder, paste the token again. The extension ID stays the same, so the bot keeps accepting it |
+| Search points don't increase | Edit the account language to `en` |
 
-Bạn không cần tự đăng nhập ở đâu cả. Bot tự đăng nhập ở lần chạy đầu, rồi nhớ luôn cho những lần sau.
+Per-run details are under **Nhật ký** (Logs) on the manage page.
 
-## Bước 5: Chạy
+## Update / pause / uninstall
 
-Bấm **Bắt đầu farm** trong popup. Mỗi lượt mất khoảng 10–30 phút.
+- **Update**: `git pull && bash netsky/setup.sh`, then click **Reload** on the extension. Token and accounts are kept.
+- **Pause**: `cd Microsoft-Rewards-Script && docker compose down`. Resume: `docker compose up -d`.
+- **Uninstall**: pause, remove the extension, delete the project folder. On Linux, `config/` and `sessions/` need `sudo rm -rf`.
 
-Từ nay bot **tự chạy lúc 07:00 mỗi ngày**. Muốn đổi giờ thì vào mục **Lịch chạy** trong trang quản lý. Bot vẫn tự chạy dù Edge đóng, miễn là máy đang bật và Docker đang chạy.
-
-> Windows/macOS: trong cài đặt của Docker Desktop, bật **Start Docker Desktop when you sign in** để bot luôn sẵn sàng.
-
----
-
-## Khi bot cần bạn
-
-- **Popup hiện một con số màu cam:** Microsoft đang hỏi xác nhận. Mở app **Microsoft Authenticator** trên điện thoại và chọn đúng số đó.
-- **Tự mở một tab có trình duyệt bên trong:** tài khoản đòi mã gửi qua email, hoặc cần một bước bot không tự làm được. Trong tab đó, bấm **Send code** **một lần**, rồi dán mã từ email vào. Đăng nhập xong, tab tự đóng và bot tự chạy tiếp. Muốn tự mở trang này, bấm **Đăng nhập thủ công** ở dòng tài khoản trong trang quản lý.
-
-Tab chỉ tự mở khi Edge đang mở. Bot không bao giờ tự gửi mã, nên không lo bị gửi dồn mã làm khoá tài khoản.
-
----
-
-## Gặp lỗi?
-
-| Hiện tượng | Cách xử lý |
-|---|---|
-| `LỖI: Docker chưa chạy` | Mở Docker Desktop, chờ nó báo *running*, rồi chạy lại `bash netsky/setup.sh` |
-| `LỖI: tài khoản này chưa được dùng Docker` (Linux) | Chạy `sudo usermod -aG docker $USER`, đăng xuất, đăng nhập lại, rồi chạy lại setup |
-| `$'\r': command not found` (Windows) | Tải lại project bằng `git clone` như ở bước 1, đừng sao chép file qua Windows Explorer |
-| `port is already allocated` | Một chương trình khác đang dùng cổng 3010 hoặc 6080. Tắt chương trình đó rồi chạy lại setup |
-| Popup báo bot chưa chạy | Mở Docker Desktop. Nếu vẫn vậy, chạy lại `bash netsky/setup.sh` |
-| Popup báo token sai | Chạy lại `bash netsky/setup.sh`: nó in lại đúng token. Token cũng nằm trong file `Microsoft-Rewards-Script/.env` |
-| Điểm tìm kiếm PC/Mobile không tăng | Ngôn ngữ tài khoản đang là `vi`: bấm **Sửa**, đổi thành `en` |
-| Popup báo *"Đã cập nhật. Tải lại để chạy bản mới."* | Bấm **Tải lại** |
-
-Chi tiết từng lượt chạy xem ở mục **Nhật ký** trong trang quản lý.
-
----
-
-## Cập nhật, tạm dừng, gỡ bỏ
-
-**Cập nhật:** trong thư mục project, chạy
-
-```bash
-git pull
-bash netsky/setup.sh
-```
-
-rồi bấm **Reload** extension trong `edge://extensions`. Token và tài khoản được giữ nguyên.
-
-**Tạm dừng:** chạy `cd Microsoft-Rewards-Script && docker compose down`. Bật lại bằng `docker compose up -d`.
-
-**Gỡ bỏ:** tạm dừng như trên, gỡ extension, rồi xoá thư mục project. Trên Linux, hai thư mục `config/` và `sessions/` cần xoá bằng `sudo rm -rf`.
-
----
-
-## Lưu ý
-
-- Hai file `Microsoft-Rewards-Script/.env` và `Microsoft-Rewards-Script/accounts.env` chứa token và mật khẩu. **Không gửi cho ai, không đưa lên GitHub.** Git đã được cài để tự bỏ qua hai file này.
-- Bot chỉ nhận lệnh từ chính máy của bạn, và mọi lệnh đều phải kèm token.
-- Tự động hoá Microsoft Rewards **vi phạm điều khoản** của Microsoft. Tài khoản có thể bị giới hạn điểm hoặc bị khoá. Hãy tự cân nhắc trước khi dùng.
+> 🔒 `Microsoft-Rewards-Script/.env` and `accounts.env` hold your token and passwords. **Never share them.** Git already ignores both files.

@@ -12,7 +12,7 @@ services:
             RUN_ON_START: 'false'
             API_MODE: 'true'
             # API_TOKEN comes from .env through env_file.
-            API_CORS_ORIGIN: 'chrome-extension://inlaikpebfkhfocgbfpokpnhogjmjmml'
+            API_CORS_ORIGIN: 'chrome-extension://cplgpjhknfikelhaadaomiolkbfpajih'
             API_ALLOW_CONFIG_WRITE: 'true'
             API_ALLOW_SCHEDULE_WRITE: 'true'
             API_ALLOW_ACCOUNT_WRITE: 'true'
