@@ -11,8 +11,20 @@ const FIELDS = {
     totpSecret: 'TOTP_SECRET',
     recoveryEmail: 'RECOVERY_EMAIL',
     geoLocale: 'GEO_LOCALE',
-    langCode: 'LANG_CODE'
+    langCode: 'LANG_CODE',
+    // Written from the one `proxy` field of a body, never sent on their own.
+    proxyUrl: 'PROXY_URL',
+    proxyPort: 'PROXY_PORT',
+    proxyUsername: 'PROXY_USERNAME',
+    proxyPassword: 'PROXY_PASSWORD',
+    proxyHttp: 'PROXY_HTTP'
 }
+
+const PROXY_SCHEMES = new Set(['http', 'https', 'socks4', 'socks5'])
+// [scheme://][user:password@]host:port; a login holding @ is percent-encoded.
+const PROXY_URL = /^(?:([a-z][a-z\d+.-]*):\/\/)?(?:([^:@\s]*):([^@\s]*)@)?([a-z\d.-]+):(\d+)\/?$/i
+// host:port:user:password, the way proxy sellers list them; the password is the rest.
+const PROXY_LIST = /^([a-z\d.-]+):(\d+):([^:\s]+):(\S+)$/i
 
 const ACCOUNT_KEY = /^ACCOUNT_([1-9]\d*)_([A-Z_]+)$/
 
@@ -42,6 +54,54 @@ const RULES = {
 }
 
 /**
+ * Splits a proxy into the ACCOUNT_<N>_PROXY_* parts, refusing what the bot's
+ * own validation would refuse at run time. Every part is set, so a proxy
+ * without a login clears the login of the one it replaces, and '' clears all.
+ * Reward API requests go through the proxy as well, or the account would be
+ * seen from two addresses in one run.
+ */
+function readProxy(value) {
+    if (value === '') {
+        return { proxyUrl: '', proxyPort: '', proxyUsername: '', proxyPassword: '', proxyHttp: '' }
+    }
+    const listed = PROXY_LIST.exec(value)
+    const [, scheme = 'http', username = '', password = '', host, port] = listed
+        ? [value, 'http', listed[3], listed[4], listed[1], listed[2]]
+        : (PROXY_URL.exec(value) ?? [])
+    if (!host) {
+        throw fail('`proxy` must look like http://user:password@host:port or host:port:user:password.', 'BAD_REQUEST')
+    }
+    const protocol = scheme.toLowerCase()
+    if (!PROXY_SCHEMES.has(protocol)) throw fail('`proxy` must use http, https, socks4 or socks5.', 'BAD_REQUEST')
+    const portNumber = Number(port)
+    if (portNumber < 1 || portNumber > 65535) throw fail('`proxy` port must be from 1 to 65535.', 'BAD_REQUEST')
+
+    let user = username
+    let pass = password
+    if (!listed) {
+        try {
+            user = decodeURIComponent(username)
+            pass = decodeURIComponent(password)
+        } catch {
+            throw fail('`proxy` login has broken percent-encoding.', 'BAD_REQUEST')
+        }
+    }
+    if (Boolean(user) !== Boolean(pass)) {
+        throw fail('`proxy` needs both a username and a password, or neither.', 'BAD_REQUEST')
+    }
+    if (user && protocol.startsWith('socks')) {
+        throw fail('SOCKS proxies with a username and password are not supported; use an http proxy.', 'BAD_REQUEST')
+    }
+    return {
+        proxyUrl: `${protocol}://${host}`,
+        proxyPort: String(portNumber),
+        proxyUsername: user,
+        proxyPassword: pass,
+        proxyHttp: 'true'
+    }
+}
+
+/**
  * Checks the fields of an account body. Unknown fields are refused; an empty
  * string clears an optional field.
  */
@@ -49,7 +109,7 @@ export function readAccountFields(body, { requireEmail }) {
     if (typeof body !== 'object' || body === null || Array.isArray(body)) {
         throw fail('Body must be a JSON object.', 'BAD_REQUEST')
     }
-    const unknown = Object.keys(body).filter(key => !(key in FIELDS))
+    const unknown = Object.keys(body).filter(key => !(key in RULES) && key !== 'proxy')
     if (unknown.length)
         throw fail(`Unknown field${unknown.length === 1 ? '' : 's'}: ${unknown.join(', ')}`, 'BAD_REQUEST')
 
@@ -58,6 +118,10 @@ export function readAccountFields(body, { requireEmail }) {
         if (typeof raw !== 'string') throw fail(`\`${name}\` must be a string.`, 'BAD_REQUEST')
         const value = name === 'password' ? raw : raw.trim()
         if (hasControlCharacters(value)) throw fail(`\`${name}\` must not contain control characters.`, 'BAD_REQUEST')
+        if (name === 'proxy') {
+            Object.assign(fields, readProxy(value))
+            continue
+        }
         if (value === '') {
             if (name === 'email') throw fail('`email` must not be empty.', 'BAD_REQUEST')
             fields[name] = ''

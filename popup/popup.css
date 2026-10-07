@@ -152,6 +152,13 @@ h1 { margin: 0; font-size: 14px; font-weight: 650; letter-spacing: -0.01em; whit
 .hero-sub b { color: var(--text); font-weight: 650; }
 .ic-coin { color: var(--coin); width: 15px; height: 15px; }
 
+.hero-rank { margin-top: 3px; }
+.rank-medal { width: 18px; height: 18px; flex: none; margin-inline: -1.5px; }
+.ic-rank { color: var(--muted); width: 15px; height: 15px; }
+/* Microsoft's medal; the plain icon when there is none or it does not load. */
+.hero-rank[data-medal="ok"] .ic-rank,
+.hero-rank[data-medal="none"] .rank-medal { display: none; }
+
 .ring { position: relative; width: 76px; height: 76px; flex: none; }
 .ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
 .ring circle { fill: none; stroke-width: 6; }

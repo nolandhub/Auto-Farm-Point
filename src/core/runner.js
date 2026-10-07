@@ -208,6 +208,7 @@ async function putCachedDashboard(dash) {
     [STORAGE_KEYS.balance]: ledger,
     [DASHBOARD_CACHE_KEY]: {
       level: dash.level,
+      rank: dash.rank,
       availablePoints: dash.availablePoints,
       todayPoints: dash.todayPoints,
       // From the balance, so app points count; see ledger.js.

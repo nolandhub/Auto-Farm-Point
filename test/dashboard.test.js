@@ -75,6 +75,10 @@ test("parseDashboard pulls level and point balance", () => {
   assert.equal(d.availablePoints, 12345);
 });
 
+test("an old-program level has a rank with no medal", () => {
+  assert.deepEqual(parseDashboard(RAW).rank, { key: "Level2", title: "Level2", icon: null });
+});
+
 test("parseDashboard picks the search counter, not the Edge bonus beside it", () => {
   const d = parseDashboard(RAW);
   assert.equal(d.counters.pc.current, 63);
@@ -271,6 +275,61 @@ test("the flyout payload yields the balance and today's points", () => {
   assert.equal(d.todayPoints, 163);
   assert.equal(d.level, "newLevel2");
   assert.equal(d.userId, "user-123");
+});
+
+const medal = (name) => `https://bing.com/th?id=OMR.Medals.${name}.png&pid=Rewards&w=104&p=0&qlt=100`;
+
+/** The two level promotions as the flyout sends them, one ";"-separated entry per level. */
+function withLevels(raw, { level = "newLevel3", medallions } = {}) {
+  raw.userInfo.promotions = [
+    {
+      name: "level_benefits",
+      attributes: {
+        activeLevel: level,
+        supportedLevelKeys: "newLevel1;newLevel2;newLevel3",
+        levelMedallion: medallions ?? [medal("Base"), medal("Silver"), medal("Gold")].join(";"),
+      },
+    },
+    {
+      name: "level_info",
+      attributes: {
+        level,
+        level_keys: "newLevel1;newLevel2;newLevel3",
+        level_values: "Member;Silver Member;Gold Member",
+      },
+    },
+  ];
+  return raw;
+}
+
+test("the rank is Bing's own title and medal for the account's level", () => {
+  const d = parseDashboard(withLevels(flyout()), { now: NOON_UTC });
+  assert.equal(d.level, "newLevel3");
+  assert.deepEqual(d.rank, { key: "newLevel3", title: "Gold Member", icon: medal("Gold") });
+});
+
+test("the rank follows the level's position in Bing's lists", () => {
+  const d = parseDashboard(withLevels(flyout(), { level: "newLevel1" }), { now: NOON_UTC });
+  assert.deepEqual(d.rank, { key: "newLevel1", title: "Member", icon: medal("Base") });
+});
+
+test("a level named without its lists still gets Bing's medal", () => {
+  // The fixture's level_benefits carries only activeLevel.
+  const d = parseDashboard(flyout(), { now: NOON_UTC });
+  assert.deepEqual(d.rank, { key: "newLevel2", title: "newLevel2", icon: medal("Silver") });
+});
+
+test("a medal that is not an https address is not used", () => {
+  const raw = withLevels(flyout(), { medallions: "javascript:alert(1);data:x;http://bing.com/gold.png" });
+  assert.equal(parseDashboard(raw, { now: NOON_UTC }).rank.icon, medal("Gold"));
+});
+
+test("an account with no level has no rank", () => {
+  const raw = flyout();
+  raw.userInfo.promotions = [];
+  const d = parseDashboard(raw, { now: NOON_UTC });
+  assert.equal(d.level, null);
+  assert.equal(d.rank, null);
 });
 
 test("the flyout PC counter skips the Edge bonus the way Bing's own card does", () => {

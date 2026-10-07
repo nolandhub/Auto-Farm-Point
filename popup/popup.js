@@ -342,6 +342,7 @@ function renderHero(dash, botPoints) {
   } else {
     balance.textContent = t(lang, "estimateNote");
   }
+  renderRank(dash?.rank ?? null);
 
   let current = 0;
   let max = 0;
@@ -357,6 +358,32 @@ function renderHero(dash, botPoints) {
   el("ringPct").textContent = `${Math.round(share * 100)}%`;
   el("ring").dataset.met = String(max > 0 && current >= max);
   el("ring").setAttribute("aria-label", t(lang, "ringAria", { current: fmt(current), max: fmt(max) }));
+}
+
+/** The level's name in the popup's language; Bing's own title for a level it adds later. */
+function rankName(rank) {
+  const key = `rank${rank.key[0].toUpperCase()}${rank.key.slice(1)}`;
+  const name = t(lang, key);
+  return name === key ? rank.title : name;
+}
+
+/** The account's Rewards level under the balance: Microsoft's medal for it, then its name. */
+function renderRank(rank) {
+  const row = el("rank");
+  row.hidden = !rank;
+  if (!rank) return;
+  const medal = el("rankMedal");
+  const icon = rank.icon ?? "";
+  // Set only on a change, so the re-render every 1.5s does not reload it.
+  if (medal.dataset.src !== icon) {
+    medal.dataset.src = icon;
+    row.dataset.medal = icon ? "ok" : "none";
+    if (icon) medal.src = icon;
+    else medal.removeAttribute("src");
+  }
+  const name = rankName(rank);
+  el("rankText").textContent = name;
+  row.title = t(lang, "rankTitle", { rank: name });
 }
 
 function renderTile(mode, dash) {
@@ -815,6 +842,11 @@ el("viewSelect").addEventListener("change", (event) => {
   void savePrefs();
   renderDashboard();
   void loadView();
+});
+
+// Offline, or Bing moved the image: the plain icon stands in for the medal.
+el("rankMedal").addEventListener("error", () => {
+  el("rank").dataset.medal = "none";
 });
 
 el("tasksToggle").addEventListener("click", () => {

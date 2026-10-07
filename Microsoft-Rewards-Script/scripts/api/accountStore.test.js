@@ -129,6 +129,81 @@ test('bodies are checked field by field', () => {
     assert.deepEqual(readAccountFields({ totpSecret: '' }, { requireEmail: false }), { totpSecret: '' })
 })
 
+test('a proxy is split into the parts the bot reads, with reward requests sent through it too', () => {
+    assert.deepEqual(readAccountFields({ proxy: ' http://user:p%40ss@1.2.3.4:8080 ' }, { requireEmail: false }), {
+        proxyUrl: 'http://1.2.3.4',
+        proxyPort: '8080',
+        proxyUsername: 'user',
+        proxyPassword: 'p@ss',
+        proxyHttp: 'true'
+    })
+})
+
+test('a proxy is read in the host:port:user:password form proxy sellers list', () => {
+    assert.deepEqual(readAccountFields({ proxy: 'proxy.example.com:3128:user:p@ss:word' }, { requireEmail: false }), {
+        proxyUrl: 'http://proxy.example.com',
+        proxyPort: '3128',
+        proxyUsername: 'user',
+        proxyPassword: 'p@ss:word',
+        proxyHttp: 'true'
+    })
+})
+
+test('a proxy without a login clears the one it replaces', () => {
+    assert.deepEqual(readAccountFields({ proxy: 'socks5://10.0.0.2:1080' }, { requireEmail: false }), {
+        proxyUrl: 'socks5://10.0.0.2',
+        proxyPort: '1080',
+        proxyUsername: '',
+        proxyPassword: '',
+        proxyHttp: 'true'
+    })
+})
+
+test('an empty proxy clears every proxy part', () => {
+    assert.deepEqual(readAccountFields({ proxy: '' }, { requireEmail: false }), {
+        proxyUrl: '',
+        proxyPort: '',
+        proxyUsername: '',
+        proxyPassword: '',
+        proxyHttp: ''
+    })
+})
+
+test('a proxy the bot would refuse is refused before it is saved', () => {
+    const read = proxy => () => readAccountFields({ proxy }, { requireEmail: false })
+    assert.throws(read('1.2.3.4'), /host:port/)
+    assert.throws(read('ftp://1.2.3.4:21'), /http, https, socks4 or socks5/)
+    assert.throws(read('1.2.3.4:0'), /1 to 65535/)
+    assert.throws(read('1.2.3.4:70000'), /1 to 65535/)
+    assert.throws(read('http://user:@1.2.3.4:8080'), /both a username and a password/)
+    assert.throws(read('socks5://user:pass@1.2.3.4:1080'), /SOCKS/)
+    assert.throws(read('http://user:%E0%A4%A@1.2.3.4:8080'), /encoding/)
+})
+
+test('the proxy parts are stored under the account and removed together', () => {
+    const { dir, file } = tempEnv('')
+    const env = {}
+    const proxy = readAccountFields({ proxy: 'http://user:pa"ss@1.2.3.4:8080' }, { requireEmail: false })
+    addAccount(file, { email: 'me@example.com', ...proxy }, env)
+
+    const saved = reread(dir)
+    assert.equal(saved.ACCOUNT_1_PROXY_URL, 'http://1.2.3.4')
+    assert.equal(saved.ACCOUNT_1_PROXY_PORT, '8080')
+    assert.equal(saved.ACCOUNT_1_PROXY_USERNAME, 'user')
+    assert.equal(saved.ACCOUNT_1_PROXY_PASSWORD, 'pa"ss')
+    assert.equal(saved.ACCOUNT_1_PROXY_HTTP, 'true')
+
+    updateAccount(file, 1, readAccountFields({ proxy: '' }, { requireEmail: false }), env)
+
+    const cleared = Object.keys(reread(dir)).filter(key => key.includes('PROXY'))
+    assert.deepEqual(cleared, [])
+    assert.deepEqual(Object.keys(env).filter(key => key.includes('PROXY')), [])
+})
+
+test('the proxy parts cannot be sent one by one', () => {
+    assert.throws(() => readAccountFields({ proxyUrl: 'http://1.2.3.4' }, { requireEmail: false }), /Unknown field/)
+})
+
 const THREE = [
     '# Accounts, managed from the Bing Auto Search manager page.',
     'API_TOKEN="abc"',

@@ -48,6 +48,7 @@ export async function readAccountView({ api, index, ledger = null, now = new Dat
   const next = trackBalance(ledger, { balance: dash.availablePoints, day, previousDay: dateKey(yesterday) });
   const dashboard = {
     level: dash.level,
+    rank: dash.rank,
     availablePoints: dash.availablePoints,
     todayPoints: dash.todayPoints,
     earnedToday: earnedToday(next, day),

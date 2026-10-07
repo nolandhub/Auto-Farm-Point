@@ -142,10 +142,46 @@ function todaysDailySet(dailySet, now, marketOffset) {
   return groups.length === 1 ? [].concat(groups[0][1] ?? []) : [];
 }
 
-function levelOf(raw, status) {
-  if (status.level) return status.level;
-  const benefits = (raw.userInfo?.promotions ?? []).find((p) => p?.name === "level_benefits");
-  return benefits?.attributes?.activeLevel ?? null;
+/** Bing's medal for each level of the current program, for a payload that leaves levelMedallion out. */
+const MEDALS = { newLevel1: "Base", newLevel2: "Silver", newLevel3: "Gold" };
+const medalUrl = (name) => `https://bing.com/th?id=OMR.Medals.${name}.png&pid=Rewards&w=104&p=0&qlt=100`;
+
+function promotionAttributes(raw, name) {
+  const promotion = (raw.userInfo?.promotions ?? []).find((p) => p?.name === name);
+  return promotion?.attributes ?? {};
+}
+
+/** The level promotions list one entry per level, ";"-separated, in supportedLevelKeys' order. */
+function perLevel(value) {
+  return typeof value === "string" ? value.split(";").map((entry) => entry.trim()) : [];
+}
+
+/** The popup puts this in an <img>, so only an https address is taken. */
+function httpsUrl(value) {
+  try {
+    return new URL(value).protocol === "https:" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The account's Rewards level as { key, title, icon }, or null: Bing's own
+ * title ("Gold Member") and medal image for it. The legacy api names an
+ * old-program level (Level1/Level2), which has neither.
+ */
+function rankOf(raw, status) {
+  const benefits = promotionAttributes(raw, "level_benefits");
+  const info = promotionAttributes(raw, "level_info");
+  const key = [status.level, benefits.activeLevel, info.level].find((v) => typeof v === "string" && v);
+  if (!key) return null;
+  const index = perLevel(benefits.supportedLevelKeys ?? info.level_keys).indexOf(key);
+  const pick = (value) => (index < 0 ? "" : (perLevel(value)[index] ?? ""));
+  return {
+    key,
+    title: pick(info.level_values) || key,
+    icon: httpsUrl(pick(benefits.levelMedallion)) ?? (MEDALS[key] ? medalUrl(MEDALS[key]) : null),
+  };
 }
 
 /**
@@ -156,6 +192,7 @@ export function parseDashboard(raw, { now = new Date() } = {}) {
   const empty = {
     signedIn: false,
     level: null,
+    rank: null,
     availablePoints: null,
     todayPoints: null,
     counters: { pc: null, mobile: null },
@@ -181,10 +218,12 @@ export function parseDashboard(raw, { now = new Date() } = {}) {
   const available = Number(status.availablePoints);
   const daily = findKey(counters, "dailyPoint");
   const todayPoints = Array.isArray(daily) ? Number(daily[0]?.pointProgress) : NaN;
+  const rank = rankOf(raw, status);
 
   return {
     signedIn,
-    level: levelOf(raw, status),
+    level: rank?.key ?? null,
+    rank,
     availablePoints: Number.isFinite(available) && signedIn ? available : null,
     todayPoints: Number.isFinite(todayPoints) && signedIn ? todayPoints : null,
     counters: {

@@ -200,6 +200,9 @@ function signInMethod(account) {
   return t(lang, "methodAuthenticator");
 }
 
+/** The proxy an account goes through, as the API shows it: no login. */
+const proxyAddress = (proxy) => `${proxy.url}:${proxy.port}`;
+
 function sessionText(email) {
   const times = sessions
     .filter((s) => s.email?.toLowerCase() === email.toLowerCase() && s.hasStorageState !== false)
@@ -256,6 +259,11 @@ function renderAccounts({ force = false } = {}) {
     signed.textContent = session.text;
     signed.dataset.tone = session.tone;
     meta.append(method, signed);
+    if (account.proxy) {
+      const proxy = document.createElement("span");
+      proxy.textContent = t(lang, "proxyRow", { proxy: proxyAddress(account.proxy) });
+      meta.append(proxy);
+    }
     if (account.lastSuccess === true) {
       const last = document.createElement("span");
       last.dataset.tone = "ok";
@@ -656,6 +664,9 @@ function openEdit(account) {
   form.reset();
   form.elements.geoLocale.value = account.geoLocale ?? "auto";
   form.elements.langCode.value = account.langCode ?? "";
+  el("editProxyNow").textContent = account.proxy
+    ? t(lang, "proxyNow", { proxy: proxyAddress(account.proxy) })
+    : t(lang, "proxyNone");
   el("editTitle").textContent = t(lang, "editTitle", { email: account.email });
   setStatus("editStatus", "");
   el("editDialog").showModal();
@@ -672,6 +683,8 @@ el("editForm").addEventListener("submit", async (event) => {
   const code = form.langCode.value.trim();
   if (geo && geo !== editing.geoLocale) patch.geoLocale = geo;
   if (code && code !== editing.langCode) patch.langCode = code;
+  if (form.clearProxy.checked) patch.proxy = "";
+  else if (form.proxy.value.trim()) patch.proxy = form.proxy.value.trim();
   if (!Object.keys(patch).length) {
     el("editDialog").close();
     return;
@@ -700,7 +713,7 @@ el("addForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.target.elements;
   const fields = { email: form.email.value.trim() };
-  for (const name of ["password", "totpSecret", "recoveryEmail", "geoLocale", "langCode"]) {
+  for (const name of ["password", "totpSecret", "recoveryEmail", "geoLocale", "langCode", "proxy"]) {
     const value = name === "password" ? form[name].value : form[name].value.trim();
     if (value) fields[name] = value;
   }

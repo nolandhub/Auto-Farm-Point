@@ -12,7 +12,11 @@ function flyout({ signedIn = true, balance = 1470 } = {}) {
   return {
     isRewardsUser: signedIn,
     userId: "user-bot",
-    userInfo: { isRewardsUser: signedIn, balance },
+    userInfo: {
+      isRewardsUser: signedIn,
+      balance,
+      promotions: [{ name: "level_benefits", attributes: { activeLevel: "newLevel3" } }],
+    },
     flyoutResult: {
       userStatus: {
         isRewardsUser: signedIn,
@@ -77,6 +81,7 @@ test("reads an account's dashboard and quests through the bot API, in the popup'
   assert.equal(dashboard.userId, "user-bot");
   assert.equal(dashboard.source, "bot");
   assert.equal(dashboard.readAt, NOW.getTime());
+  assert.equal(dashboard.rank.key, "newLevel3");
 
   assert.deepEqual(
     tasks.items.map((t) => [t.id, t.state]),

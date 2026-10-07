@@ -65,7 +65,7 @@
     "apiSearch": false,
     "apiSearchOnBing": false,
     "blockMedia": false,
-    "edgeBrowsing": false
+    "edgeBrowsing": true
   },
   "debugLogs": false,
   "proxy": {

@@ -337,6 +337,7 @@ test("the popup snapshot exposes the real point balance", async () => {
   assert.equal(snap.dashboard.availablePoints, 5000);
   assert.equal(snap.dashboard.counters.pc.current, 36, "the live counter, two credited searches on");
   assert.equal(snap.dashboard.level, "newLevel2");
+  assert.equal(snap.dashboard.rank.key, "newLevel2", "the rank the popup shows rides along");
   assert.equal(snap.dashboard.todayPoints, 42);
   await runner.stop("test");
 });

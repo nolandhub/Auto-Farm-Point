@@ -129,6 +129,11 @@
             <input name="langCode" type="text" value="en" maxlength="12" spellcheck="false" />
             <span class="hint" data-i18n="langHint">Keep en.</span>
           </label>
+          <label class="field span-all">
+            <span data-i18n="proxyLabel">Proxy</span>
+            <input name="proxy" type="text" autocomplete="off" spellcheck="false" placeholder="http://user:password@host:port" />
+            <span class="hint" data-i18n="proxyHint">Optional.</span>
+          </label>
           <div class="row-end span-all">
             <button class="secondary" type="button" id="addCancel" data-i18n="cancel">Cancel</button>
             <button class="primary primary--inline" type="submit" data-i18n="addAccount">Add account</button>
@@ -218,6 +223,15 @@
           <span data-i18n="langLabel">Language</span>
           <input name="langCode" type="text" maxlength="12" spellcheck="false" />
           <span class="hint" data-i18n="langHint">Keep en.</span>
+        </label>
+        <label class="field">
+          <span data-i18n="proxyLabel">Proxy</span>
+          <input name="proxy" type="text" autocomplete="off" spellcheck="false" placeholder="http://user:password@host:port" />
+          <span class="hint" id="editProxyNow"></span>
+        </label>
+        <label class="switch">
+          <input type="checkbox" role="switch" name="clearProxy" />
+          <span data-i18n="clearProxy">Remove the proxy</span>
         </label>
         <p class="status" id="editStatus" role="status" aria-live="polite"></p>
         <div class="row-end">
