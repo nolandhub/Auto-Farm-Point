@@ -78,3 +78,20 @@ test("nothing known shows nothing", () => {
   assert.equal(pickToday({ earned: null, exact: false, dailyPoint: null, bot: null }), null);
   assert.equal(pickToday({}), null);
 });
+
+test("one low reading that bounces back is not spending", () => {
+  let ledger = read(null, 5011, TUE, MON);
+  ledger = read(ledger, 4900, TUE, MON); // stale or half-loaded page
+  assert.equal(earnedToday(ledger, TUE), 0);
+  ledger = read(ledger, 5011, TUE, MON);
+  assert.equal(earnedToday(ledger, TUE), 0, "the dip must not inflate today's points");
+  assert.equal(ledger.drop, undefined);
+});
+
+test("a low reading confirmed by the next one is spending", () => {
+  let ledger = read(null, 1000, TUE, MON);
+  ledger = read(ledger, 100, TUE, MON);
+  ledger = read(ledger, 100, TUE, MON);
+  ledger = read(ledger, 130, TUE, MON);
+  assert.equal(earnedToday(ledger, TUE), 30);
+});

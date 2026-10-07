@@ -9,6 +9,7 @@
  * Ledger: { day, baseline, last, exact }. `baseline` is the balance today's
  * earnings are counted from, `last` the latest reading, and `exact` whether
  * the baseline is yesterday's last reading rather than today's first one.
+ * `drop` is a first reading below `last`, held until a second one confirms it.
  */
 
 const isBalance = (value) => typeof value === "number" && Number.isFinite(value);
@@ -23,9 +24,14 @@ export function trackBalance(ledger, { balance, day, previousDay }) {
     return { day, baseline: fromYesterday ? ledger.last : balance, last: balance, exact: fromYesterday };
   }
 
-  // A drop is points spent on a reward, not negative earnings.
-  const spent = Math.max(0, ledger.last - balance);
-  return { ...ledger, baseline: ledger.baseline - spent, last: balance };
+  const { drop, ...rest } = ledger;
+  if (balance >= ledger.last) return { ...rest, last: balance };
+
+  // A drop is points spent on a reward, not negative earnings. One low reading
+  // may just be a stale or half-loaded page, and counting it as spending would
+  // lower the baseline for good, so the next reading must still be low too.
+  if (!isBalance(drop)) return { ...ledger, drop: balance };
+  return { ...rest, baseline: ledger.baseline - (ledger.last - drop), last: balance };
 }
 
 /** Points earned on `day`, or null when the ledger does not cover it. */
